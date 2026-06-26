@@ -1,0 +1,6 @@
+﻿bin/
+obj/
+.vs/
+*.user
+*.py
+cache.db
