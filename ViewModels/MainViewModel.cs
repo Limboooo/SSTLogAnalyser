@@ -32,10 +32,12 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _compareMultiChannel = true;
     [ObservableProperty] private bool _compareMultiLoop;
     [ObservableProperty] private bool _showLegend = true;
+    [ObservableProperty] private bool _performanceMode;
     [ObservableProperty] private bool _tooltipVisible;
     [ObservableProperty] private string _tooltipTitle = string.Empty;
     [ObservableProperty] private string _tooltipExpect = string.Empty;
     [ObservableProperty] private string _tooltipDiff = string.Empty;
+    [ObservableProperty] private string _tooltipExtra = string.Empty;
 
     public ObservableCollection<LogFileInfo> LoadedFiles { get; } = new();
     public ObservableCollection<string> AvailableModules { get; } = new();
@@ -51,6 +53,8 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<PassFailEntry> PassFailEntries { get; } = new();
     public ObservableCollection<LegendItem> LegendItems { get; } = new();
     public List<TooltipDataPoint> CurrentChartData { get; private set; } = new();
+    public ObservableCollection<TestResult> ChartDataRows { get; } = new();
+    [ObservableProperty] private TestResult? _selectedChartRow;
 
     private static readonly SKColor[] Palette = new[]
     {
@@ -64,7 +68,7 @@ public partial class MainViewModel : ObservableObject
     {
         _cache = new CacheService();
         _parser = new LogParser();
-        SelectedChannels.CollectionChanged += (_, _) => UpdateChart();
+        SelectedChannels.CollectionChanged += (_, _) => { RefreshTestItems(); UpdateChart(); };
         SelectedLoops.CollectionChanged += (_, _) => UpdateChart();
         InitializeChart();
     }
@@ -137,8 +141,9 @@ public partial class MainViewModel : ObservableObject
     { RefreshChannels(); RefreshTestItems(); RefreshLoops(); UpdateChart(); RefreshSecondaryViews(); }
     partial void OnSelectedTestItemChanged(string? value) { RefreshLoops(); UpdateChart(); RefreshSecondaryViews(); }
     partial void OnSearchTextChanged(string value) { RefreshTestItems(); UpdateChart(); }
-    partial void OnCompareMultiChannelChanged(bool value) { if (value) CompareMultiLoop = false; UpdateChart(); }
+    partial void OnCompareMultiChannelChanged(bool value) { if (value) { CompareMultiLoop = false; SelectedChannels.Clear(); } UpdateChart(); }
     partial void OnCompareMultiLoopChanged(bool value) { if (value) CompareMultiChannel = false; UpdateChart(); }
+    partial void OnPerformanceModeChanged(bool value) { UpdateChart(); }
 
     private void RefreshFilters()
     {
@@ -161,12 +166,15 @@ public partial class MainViewModel : ObservableObject
         var fileIds = LoadedFiles.Select(f => f.FileId).ToArray();
         if (fileIds.Length == 0) return;
         AvailableTestItems.Clear();
-        foreach (var t in _cache.GetDistinctTestItems(fileIds, SelectedModule))
+        var channels = SelectedChannels.Count > 0 ? SelectedChannels.ToArray() : null;
+        foreach (var t in _cache.GetDistinctTestItems(fileIds, SelectedModule, channels))
         {
             if (!string.IsNullOrEmpty(SearchText) && !t.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
                 continue;
             AvailableTestItems.Add(t);
         }
+        if (SelectedTestItem != null && !AvailableTestItems.Contains(SelectedTestItem))
+            SelectedTestItem = null;
     }
 
     private void RefreshLoops()
@@ -190,17 +198,19 @@ public partial class MainViewModel : ObservableObject
     {
         var fileIds = LoadedFiles.Select(f => f.FileId).ToArray();
         if (fileIds.Length == 0 || SelectedModule == null || SelectedTestItem == null)
-        { Series = Array.Empty<ISeries>(); LegendItems.Clear(); CurrentChartData.Clear(); return; }
+        { Series = Array.Empty<ISeries>(); LegendItems.Clear(); CurrentChartData.Clear(); ChartDataRows.Clear(); return; }
 
-        var channels = SelectedChannels.Count > 0 ? SelectedChannels.ToArray() : null;
+        var channels = CompareMultiChannel ? null : (SelectedChannels.Count > 0 ? SelectedChannels.ToArray() : null);
         var loops = SelectedLoops.Count > 0 ? SelectedLoops.ToArray() : null;
         var data = _cache.QueryTestResults(fileIds, SelectedModule, SelectedTestItem, channels, loops);
         if (data.Count == 0)
-        { Series = Array.Empty<ISeries>(); LegendItems.Clear(); CurrentChartData.Clear(); return; }
+        { Series = Array.Empty<ISeries>(); LegendItems.Clear(); CurrentChartData.Clear(); ChartDataRows.Clear(); return; }
 
         var seriesList = new List<ISeries>();
         LegendItems.Clear();
         CurrentChartData.Clear();
+        ChartDataRows.Clear();
+        foreach (var r in data) ChartDataRows.Add(r);
         int colorIdx = 0;
         int groupIdx = 0;
         var multiFile = LoadedFiles.Count > 1;
@@ -245,63 +255,116 @@ public partial class MainViewModel : ObservableObject
     {
         if (points.Count == 0) return;
         var ordered = points.OrderBy(r => r.ExpectValue).ToList();
+        bool isMixi = ordered.Count > 0 && ordered[0].ModuleType == ModuleType.MIXI;
 
-        var lineSeries = new LineSeries<ObservablePoint>
+        if (PerformanceMode)
         {
-            Name = title,
-            Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
-            Stroke = new SolidColorPaint(color) { StrokeThickness = 2f },
-            GeometryStroke = new SolidColorPaint(color) { StrokeThickness = 2f },
-            GeometrySize = 6f,
-            Fill = null,
-            LineSmoothness = 0f
-        };
-        seriesList.Add(lineSeries);
-        LegendItems.Add(new LegendItem { Name = title, ColorBrush = new SolidColorBrush(Color.FromRgb(color.Red, color.Green, color.Blue)) });
-
-        foreach (var p in ordered)
-            CurrentChartData.Add(new TooltipDataPoint { SeriesName = title, ExpectValue = p.ExpectValue, Difference = p.Difference, IsFailed = p.IsFailed, IsLimit = false });
-
-        if (drawLimits)
-        {
-            var highLimit = new LineSeries<ObservablePoint>
+            // Lightweight: line + limits, no geometry markers, no failed overlay
+            var lineSeries = new LineSeries<ObservablePoint>
             {
-                Name = "High Limit",
-                Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, p.UpLimit)).ToArray(),
-                Stroke = new SolidColorPaint(new SKColor(220, 50, 50, 160)) { StrokeThickness = 1.5f },
-                GeometryStroke = null, GeometrySize = 0f, Fill = null, LineSmoothness = 0f
+                Name = title,
+                Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
+                Stroke = new SolidColorPaint(color) { StrokeThickness = 1.5f },
+                GeometryStroke = null,
+                GeometrySize = 0f,
+                Fill = null,
+                LineSmoothness = 0f
             };
-            seriesList.Add(highLimit);
-            LegendItems.Add(new LegendItem { Name = "High Limit", ColorBrush = new SolidColorBrush(Color.FromRgb(220, 50, 50)) });
-
-            var lowLimit = new LineSeries<ObservablePoint>
-            {
-                Name = "Low Limit",
-                Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, p.LowLimit)).ToArray(),
-                Stroke = new SolidColorPaint(new SKColor(50, 100, 220, 160)) { StrokeThickness = 1.5f },
-                GeometryStroke = null, GeometrySize = 0f, Fill = null, LineSmoothness = 0f
-            };
-            seriesList.Add(lowLimit);
-            LegendItems.Add(new LegendItem { Name = "Low Limit", ColorBrush = new SolidColorBrush(Color.FromRgb(50, 100, 220)) });
+            seriesList.Add(lineSeries);
+            LegendItems.Add(new LegendItem { Name = title, ColorBrush = new SolidColorBrush(Color.FromRgb(color.Red, color.Green, color.Blue)) });
 
             foreach (var p in ordered)
+                CurrentChartData.Add(new TooltipDataPoint { SeriesName = title, ExpectValue = p.ExpectValue, Difference = p.Difference, MeasureValue = p.MeasureValue, IsFailed = p.IsFailed, IsLimit = false, WaveValue = p.WaveValue, OffsetValue = p.OffsetValue, DiffValue = p.DiffValue, RowIndex = ChartDataRows.IndexOf(p) });
+
+            if (drawLimits)
             {
-                CurrentChartData.Add(new TooltipDataPoint { SeriesName = "High Limit", ExpectValue = p.ExpectValue, Difference = p.UpLimit, IsLimit = true });
-                CurrentChartData.Add(new TooltipDataPoint { SeriesName = "Low Limit", ExpectValue = p.ExpectValue, Difference = p.LowLimit, IsLimit = true });
+                var highLimit = new LineSeries<ObservablePoint>
+                {
+                    Name = "High Limit",
+                    Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, isMixi ? p.UpLimit - p.ExpectValue : p.UpLimit)).ToArray(),
+                    Stroke = new SolidColorPaint(new SKColor(220, 50, 50, 160)) { StrokeThickness = 1.5f },
+                    GeometryStroke = null, GeometrySize = 0f, Fill = null, LineSmoothness = 0f
+                };
+                seriesList.Add(highLimit);
+                LegendItems.Add(new LegendItem { Name = "High Limit", ColorBrush = new SolidColorBrush(Color.FromRgb(220, 50, 50)) });
+
+                var lowLimit = new LineSeries<ObservablePoint>
+                {
+                    Name = "Low Limit",
+                    Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, isMixi ? p.LowLimit - p.ExpectValue : p.LowLimit)).ToArray(),
+                    Stroke = new SolidColorPaint(new SKColor(50, 100, 220, 160)) { StrokeThickness = 1.5f },
+                    GeometryStroke = null, GeometrySize = 0f, Fill = null, LineSmoothness = 0f
+                };
+                seriesList.Add(lowLimit);
+                LegendItems.Add(new LegendItem { Name = "Low Limit", ColorBrush = new SolidColorBrush(Color.FromRgb(50, 100, 220)) });
+
+                foreach (var p in ordered)
+                {
+                    CurrentChartData.Add(new TooltipDataPoint { SeriesName = "High Limit", ExpectValue = p.ExpectValue, Difference = isMixi ? p.UpLimit - p.ExpectValue : p.UpLimit, IsLimit = true });
+                    CurrentChartData.Add(new TooltipDataPoint { SeriesName = "Low Limit", ExpectValue = p.ExpectValue, Difference = isMixi ? p.LowLimit - p.ExpectValue : p.LowLimit, IsLimit = true });
+                }
             }
         }
-
-        var failedPoints = ordered.Where(p => p.IsFailed).ToList();
-        if (failedPoints.Count > 0)
+        else
         {
-            var failSeries = new ScatterSeries<ObservablePoint>
+            // Quality: LineSeries with ObservablePoint, markers, limit lines, failed overlays
+            var lineSeries = new LineSeries<ObservablePoint>
             {
-                Name = title + " (Failed)",
-                Values = failedPoints.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
-                Fill = new SolidColorPaint(SKColors.Red), GeometrySize = 12f
+                Name = title,
+                Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
+                Stroke = new SolidColorPaint(color) { StrokeThickness = 2f },
+                GeometryStroke = new SolidColorPaint(color) { StrokeThickness = 2f },
+                GeometrySize = 6f,
+                Fill = null,
+                LineSmoothness = 0f
             };
-            seriesList.Add(failSeries);
-            LegendItems.Add(new LegendItem { Name = title + " (Failed)", ColorBrush = Brushes.Red });
+            seriesList.Add(lineSeries);
+            LegendItems.Add(new LegendItem { Name = title, ColorBrush = new SolidColorBrush(Color.FromRgb(color.Red, color.Green, color.Blue)) });
+
+            foreach (var p in ordered)
+                CurrentChartData.Add(new TooltipDataPoint { SeriesName = title, ExpectValue = p.ExpectValue, Difference = p.Difference, MeasureValue = p.MeasureValue, IsFailed = p.IsFailed, IsLimit = false, WaveValue = p.WaveValue, OffsetValue = p.OffsetValue, DiffValue = p.DiffValue, RowIndex = ChartDataRows.IndexOf(p) });
+
+            if (drawLimits)
+            {
+                var highLimit = new LineSeries<ObservablePoint>
+                {
+                    Name = "High Limit",
+                    Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, isMixi ? p.UpLimit - p.ExpectValue : p.UpLimit)).ToArray(),
+                    Stroke = new SolidColorPaint(new SKColor(220, 50, 50, 160)) { StrokeThickness = 1.5f },
+                    GeometryStroke = null, GeometrySize = 0f, Fill = null, LineSmoothness = 0f
+                };
+                seriesList.Add(highLimit);
+                LegendItems.Add(new LegendItem { Name = "High Limit", ColorBrush = new SolidColorBrush(Color.FromRgb(220, 50, 50)) });
+
+                var lowLimit = new LineSeries<ObservablePoint>
+                {
+                    Name = "Low Limit",
+                    Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, isMixi ? p.LowLimit - p.ExpectValue : p.LowLimit)).ToArray(),
+                    Stroke = new SolidColorPaint(new SKColor(50, 100, 220, 160)) { StrokeThickness = 1.5f },
+                    GeometryStroke = null, GeometrySize = 0f, Fill = null, LineSmoothness = 0f
+                };
+                seriesList.Add(lowLimit);
+                LegendItems.Add(new LegendItem { Name = "Low Limit", ColorBrush = new SolidColorBrush(Color.FromRgb(50, 100, 220)) });
+
+                foreach (var p in ordered)
+                {
+                    CurrentChartData.Add(new TooltipDataPoint { SeriesName = "High Limit", ExpectValue = p.ExpectValue, Difference = isMixi ? p.UpLimit - p.ExpectValue : p.UpLimit, IsLimit = true });
+                    CurrentChartData.Add(new TooltipDataPoint { SeriesName = "Low Limit", ExpectValue = p.ExpectValue, Difference = isMixi ? p.LowLimit - p.ExpectValue : p.LowLimit, IsLimit = true });
+                }
+            }
+
+            var failedPoints = ordered.Where(p => p.IsFailed).ToList();
+            if (failedPoints.Count > 0)
+            {
+                var failSeries = new ScatterSeries<ObservablePoint>
+                {
+                    Name = title + " (Failed)",
+                    Values = failedPoints.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
+                    Fill = new SolidColorPaint(SKColors.Red), GeometrySize = 12f
+                };
+                seriesList.Add(failSeries);
+                LegendItems.Add(new LegendItem { Name = title + " (Failed)", ColorBrush = Brushes.Red });
+            }
         }
     }
 
@@ -348,7 +411,7 @@ public partial class MainViewModel : ObservableObject
         AvailableTestItems.Clear(); AvailableLoops.Clear();
         SelectedChannels.Clear(); SelectedLoops.Clear();
         ErrorEntries.Clear(); DeviceEntries.Clear(); SystemInfos.Clear();
-        Statistics.Clear(); PassFailEntries.Clear(); LegendItems.Clear(); CurrentChartData.Clear();
+        Statistics.Clear(); PassFailEntries.Clear(); LegendItems.Clear(); CurrentChartData.Clear(); ChartDataRows.Clear(); SelectedChartRow = null;
         SelectedModule = null; SelectedTestItem = null;
         InitializeChart(); StatusText = "Ready";
     }
@@ -376,6 +439,11 @@ public class TooltipDataPoint
     public string SeriesName { get; set; } = string.Empty;
     public double ExpectValue { get; set; }
     public double Difference { get; set; }
+    public double MeasureValue { get; set; }
     public bool IsFailed { get; set; }
     public bool IsLimit { get; set; }
+    public double? WaveValue { get; set; }
+    public double? OffsetValue { get; set; }
+    public double? DiffValue { get; set; }
+    public int RowIndex { get; set; } = -1;
 }

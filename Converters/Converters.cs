@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -22,6 +22,17 @@ public class FailCountToColorConverter : IValueConverter
         if (value is int count && count > 0)
             return new SolidColorBrush(Color.FromRgb(255, 200, 200));
         return new SolidColorBrush(Colors.Transparent);
+    }
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
+}
+
+public class StringToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is string s && !string.IsNullOrWhiteSpace(s))
+            return Visibility.Visible;
+        return Visibility.Collapsed;
     }
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
 }

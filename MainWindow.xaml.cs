@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using SSTLogAnalyser.ViewModels;
@@ -127,7 +127,12 @@ public partial class MainWindow : Window
             var failTag = nearest.IsFailed ? " [FAIL]" : "";
             _vm.TooltipTitle = nearest.SeriesName + failTag;
             _vm.TooltipExpect = "Expected: " + nearest.ExpectValue.ToString("G6");
-            _vm.TooltipDiff = "Difference: " + nearest.Difference.ToString("G6");
+            _vm.TooltipDiff = nearest.DiffValue.HasValue
+                ? "Measured: " + nearest.MeasureValue.ToString("G6") + "\nMeas-Target: " + nearest.DiffValue.Value.ToString("G6")
+                : "Difference: " + nearest.Difference.ToString("G6");
+            _vm.TooltipExtra = (nearest.WaveValue.HasValue && nearest.OffsetValue.HasValue)
+                ? "Wave: " + nearest.WaveValue.Value.ToString("G6") + "\nOffset: " + nearest.OffsetValue.Value.ToString("G6")
+                : "";
             _vm.TooltipVisible = true;
 
             // Position tooltip near cursor using Margin
@@ -148,5 +153,137 @@ public partial class MainWindow : Window
     {
         TooltipPanel.Visibility = Visibility.Collapsed;
         _vm.TooltipVisible = false;
+    }
+
+    private void MainChart_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        try
+        {
+            if (_vm.CurrentChartData.Count == 0) return;
+
+            var pos = e.GetPosition(MainChart);
+            var w = MainChart.ActualWidth;
+            var h = MainChart.ActualHeight;
+            if (w <= 0 || h <= 0) return;
+
+            double plotLeft = 65, plotTop = 10;
+            double plotRight = w - 20, plotBottom = h - 40;
+            double plotW = plotRight - plotLeft;
+            double plotH = plotBottom - plotTop;
+            if (plotW <= 0 || plotH <= 0) return;
+
+            if (pos.X < plotLeft || pos.X > plotRight || pos.Y < plotTop || pos.Y > plotBottom)
+                return;
+
+            var allExpect = _vm.CurrentChartData.Select(d => d.ExpectValue);
+            var allDiff = _vm.CurrentChartData.Select(d => d.Difference);
+            double xMin = allExpect.Min(), xMax = allExpect.Max();
+            double yMin = allDiff.Min(), yMax = allDiff.Max();
+            double xPad = (xMax - xMin) * 0.05;
+            double yPad = (yMax - yMin) * 0.05;
+            if (xPad == 0) xPad = 0.5;
+            if (yPad == 0) yPad = 0.001;
+            xMin -= xPad; xMax += xPad;
+            yMin -= yPad; yMax += yPad;
+
+            double xRange = xMax - xMin;
+            double yRange = yMax - yMin;
+            double xScale = plotW / xRange;
+            double yScale = plotH / yRange;
+
+            TooltipDataPoint? nearest = null;
+            double nearestDist = double.MaxValue;
+
+            foreach (var dp in _vm.CurrentChartData)
+            {
+                if (dp.IsLimit) continue;
+                double dx = (dp.ExpectValue - (xMin + ((pos.X - plotLeft) / plotW) * xRange)) * xScale;
+                double dy = (dp.Difference - (yMax - ((pos.Y - plotTop) / plotH) * yRange)) * yScale;
+                double dist = Math.Sqrt(dx * dx + dy * dy);
+                if (dist < nearestDist)
+                {
+                    nearestDist = dist;
+                    nearest = dp;
+                }
+            }
+
+            if (nearest == null || nearestDist > 25 || nearest.RowIndex < 0)
+                return;
+
+            // Select the row in the data table
+            if (nearest.RowIndex < _vm.ChartDataRows.Count)
+            {
+                var row = _vm.ChartDataRows[nearest.RowIndex];
+                _vm.SelectedChartRow = row;
+                // Switch to Data tab
+                if (MainTabControl.Items.Count > 2)
+                    MainTabControl.SelectedIndex = 2;
+                // Scroll to the selected row
+                ChartDataGrid.UpdateLayout();
+                ChartDataGrid.ScrollIntoView(row);
+            }
+        }
+        catch
+        {
+            // Ignore errors
+        }
+    }
+
+    private readonly Dictionary<int, Window> _floatingWindows = new();
+    private static readonly string[] TabNames = { "Chart", "Pass/Fail Matrix", "Data", "Statistics", "Errors / FATAL", "Device Info" };
+
+    private void DetachTab_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string tagStr) return;
+        if (!int.TryParse(tagStr, out int tabIndex)) return;
+        if (tabIndex < 0 || tabIndex >= MainTabControl.Items.Count) return;
+
+        // If already floating, focus the existing window
+        if (_floatingWindows.TryGetValue(tabIndex, out var existing) && existing != null)
+        {
+            existing.Focus();
+            return;
+        }
+
+        var tabItem = MainTabControl.Items[tabIndex] as TabItem;
+        if (tabItem == null) return;
+
+        var originalContent = tabItem.Content;
+        var tabName = TabNames[tabIndex];
+
+        // Replace tab content with placeholder
+        tabItem.Content = new TextBlock
+        {
+            Text = tabName + " - floating (close window to restore)",
+            Foreground = System.Windows.Media.Brushes.Gray,
+            FontStyle = System.Windows.FontStyles.Italic,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(20)
+        };
+
+        // Create floating window
+        var floatWin = new Window
+        {
+            Title = "SST Log Analyser - " + tabName,
+            Width = 900,
+            Height = 600,
+            Owner = this,
+            DataContext = this.DataContext,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = originalContent
+        };
+
+        _floatingWindows[tabIndex] = floatWin;
+
+        floatWin.Closed += (_, _) =>
+        {
+            var movedContent = floatWin.Content;
+            floatWin.Content = null;
+            tabItem.Content = movedContent;
+            _floatingWindows.Remove(tabIndex);
+        };
+
+        floatWin.Show();
     }
 }

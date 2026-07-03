@@ -11,13 +11,15 @@ public class LogParser
     private static readonly Regex LoopRegex = new(@"Index\s+(\d+)\s+of\s+(\d+)", RegexOptions.Compiled);
     private static readonly Regex VerificationHeaderRegex = new(@"^(Re-test\s+)?(\w+)\s+Channel\s+(\d+):\s*(.+?),\s*(.+)\s+Verification\s*$", RegexOptions.Compiled);
     private static readonly Regex PeVerificationRegex = new(@"^Pin:\s*(\d+)\s+the\s+(.+)\s+Verification:\s*(Pass|Fail)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex PeTestHeaderRegex = new(@"^(Re-test\s+)?PE\s+(.+)\s+Verification\s*$", RegexOptions.Compiled);
+    private static readonly Regex PeTestHeaderRegex = new(@"^(Re-test\s+)?(?:(?:PE\s+)?(\w+))\s+Verification\s*$", RegexOptions.Compiled);
     private static readonly Regex DeviceGroupRegex = new(@"^Group\s+(\d+):\s*Location\s+(\d+)\((\d+)\)->\s*Slot\s+(.+?):\s*(.+?)\((\d+)\)", RegexOptions.Compiled);
     private static readonly Regex ToolVersionRegex = new(@"Version:\s*([\d.]+)", RegexOptions.Compiled);
     private static readonly Regex DmmTempRegex = new(@"DMM\s+Temp(?:er)?ature:([\d.]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex SysClkRegex = new(@"SysClk\s+measured.*?([\d.]+)\s+MHz", RegexOptions.Compiled);
     private static readonly Regex TmuCalRegex = new(@"TMU\s+CalDate:\s*(.+?);\s*Tmu\s+Cal\s+Value:\s*(.+?);\s*Tmu\s+Next\s+CalDate:\s*(.+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex SoftwareNameRegex = new(@"SoftwareName:\s*(.+?)\s+FileVersion:\s*(.+)", RegexOptions.Compiled);
+    private static readonly Regex MixiHeaderRegex = new(@"^(AWG|DTZ)\s+CH\s+(\d+)\s+(.+)$", RegexOptions.Compiled);
+    private static readonly Regex MixiDataRegex = new(@"--\S+--\s+Target:[\d.\-Ee+]+.*?Meas:([\d.\-Ee+]+)\s+LowLimit:([\d.\-Ee+]+)\s+HighLimit:([\d.\-Ee+]+)\s+Meas-Target:([\d.\-Ee+]+)", RegexOptions.Compiled);
 
     public async Task<ParseResult> ParseAsync(string filePath, IProgress<ParseProgress>? progress = null, CancellationToken ct = default)
     {
@@ -40,6 +42,9 @@ public class LogParser
         string[]? columnNames = null;
         bool inDataBlock = false;
         string currentTimestamp = string.Empty;
+        bool inMixiBlock = false;
+        string? mixiTestItem = null;
+        int mixiChannel = 0;
 
         using var reader = new StreamReader(filePath);
         int lineNumber = 0;
@@ -113,9 +118,79 @@ public class LogParser
             if (PeVerificationRegex.IsMatch(message))
                 continue;
 
-            if (inDataBlock && message.StartsWith(",") && message.Contains("Expect"))
+            // MIXI header detection: "AWG CH 42 AWG_CAL_HS_1M5_OFFSET_DAC" or "DTZ CH 43 DTZ_VER_..."
+            var mixiHeaderMatch = MixiHeaderRegex.Match(message);
+            if (mixiHeaderMatch.Success)
             {
-                columnNames = ParseCsvFields(message);
+                var deviceType = mixiHeaderMatch.Groups[1].Value; // AWG or DTZ
+                mixiChannel = int.Parse(mixiHeaderMatch.Groups[2].Value);
+                var testName = mixiHeaderMatch.Groups[3].Value.Trim();
+                mixiTestItem = deviceType + " " + testName;
+                inMixiBlock = true;
+                continue;
+            }
+
+            // MIXI data line: "--POS-- Target:2.85 Meas:2.88 LowLimit:2.35 HighLimit:3.35 Meas-Target:0.03"
+            if (inMixiBlock && mixiTestItem != null)
+            {
+                var mixiDataMatch = MixiDataRegex.Match(message);
+                if (mixiDataMatch.Success)
+                {
+                    // Extract Target value separately (may have extra content like [WAVE:... OFFSET:...])
+                    var targetMatch = System.Text.RegularExpressions.Regex.Match(message, @"Target:([\d.\-Ee+]+)");
+                    double target = targetMatch.Success ? ParseDouble(targetMatch.Groups[1].Value) : 0;
+                    double meas = ParseDouble(mixiDataMatch.Groups[1].Value);
+                    double lowLimit = ParseDouble(mixiDataMatch.Groups[2].Value);
+                    double upLimit = ParseDouble(mixiDataMatch.Groups[3].Value);
+                    double diff = ParseDouble(mixiDataMatch.Groups[4].Value);
+                    // MIXI limits are absolute bounds on Meas, not on Difference (Meas-Target)
+                    bool isFailed = meas > upLimit || meas < lowLimit;
+
+                    // Extract WAVE and OFFSET if present
+                    double? waveValue = null, offsetValue = null;
+                    var waveMatch = System.Text.RegularExpressions.Regex.Match(message, @"WAVE:([\d.\-Ee+]+)");
+                    var offsetMatch = System.Text.RegularExpressions.Regex.Match(message, @"OFFSET:([\d.\-Ee+]+)");
+                    if (waveMatch.Success) waveValue = ParseDouble(waveMatch.Groups[1].Value);
+                    if (offsetMatch.Success) offsetValue = ParseDouble(offsetMatch.Groups[1].Value);
+
+                    result.TestResults.Add(new TestResult
+                    {
+                        LoopIndex = currentLoop,
+                        ModuleType = ModuleType.MIXI,
+                        SlotNumber = 0,
+                        ChannelId = mixiChannel,
+                        TestItemName = mixiTestItem,
+                        ExpectValue = target,
+                        MeasureValue = meas,
+                        LowLimit = lowLimit,
+                        UpLimit = upLimit,
+                        Difference = diff,
+                        IsFailed = isFailed,
+                        IsReTest = false,
+                        LineNumber = lineNumber,
+                        WaveValue = waveValue,
+                        OffsetValue = offsetValue,
+                        DiffValue = diff
+                    });
+                    continue;
+                }
+
+                // Do not close MIXI block on noise lines; next header will overwrite
+            }
+
+            // Detect CSV column header (initial or mid-block switch, e.g. Measure Voltage after Force Voltage)
+            if (inDataBlock && message.StartsWith(",") && message.Contains("Expect", StringComparison.OrdinalIgnoreCase))
+            {
+                var newCols = ParseCsvFields(message);
+                columnNames = newCols;
+                if (currentTestHeader != null
+                    && currentTestHeader.Contains("Force Voltage", StringComparison.OrdinalIgnoreCase)
+                    && newCols.Any(c => c.Contains("AdcMeasure", StringComparison.OrdinalIgnoreCase)))
+                {
+                    string inferredType = InferTestTypeFromColumns(newCols);
+                    string rangePrefix = GetVoltageRangePrefix(currentTestHeader);
+                    currentTestHeader = rangePrefix + ", " + inferredType;
+                }
                 continue;
             }
 
@@ -130,7 +205,12 @@ public class LogParser
 
             if (inDataBlock && !message.StartsWith(",") && !string.IsNullOrWhiteSpace(message))
             {
-                if (!VerificationHeaderRegex.IsMatch(message) && !PeTestHeaderRegex.IsMatch(message))
+                // Close data block only on clear section transitions, not on mid-block noise
+                if (!VerificationHeaderRegex.IsMatch(message) && !PeTestHeaderRegex.IsMatch(message)
+                    && (message.Contains("Calibration", StringComparison.OrdinalIgnoreCase)
+                        || message.StartsWith("Point :", StringComparison.Ordinal)
+                        || message.Contains("Gain:", StringComparison.Ordinal)
+                        || message.Contains("Clamp Currents", StringComparison.OrdinalIgnoreCase)))
                 {
                     inDataBlock = false;
                     columnNames = null;
@@ -174,6 +254,23 @@ public class LogParser
         return result;
     }
 
+    private static string GetVoltageRangePrefix(string testHeader)
+    {
+        // Extract range prefix from test header like "V, -3, 8, Force Voltage" �� "V, -3, 8"
+        var parts = testHeader.Split(',').Select(p => p.Trim()).ToArray();
+        if (parts.Length >= 3)
+            return parts[0] + ", " + parts[1] + ", " + parts[2];
+        return testHeader;
+    }
+
+    private static string InferTestTypeFromColumns(string[] columnNames)
+    {
+        // Detect ADC measure column which indicates Measure Voltage
+        bool hasAdc = columnNames.Any(c =>
+            c.Contains("AdcMeasure", StringComparison.OrdinalIgnoreCase));
+        return hasAdc ? "Measure Voltage" : "Force Voltage";
+    }
+
     private static ModuleType ParseModuleType(string moduleStr)
     {
         return moduleStr.ToUpperInvariant() switch
@@ -209,11 +306,15 @@ public class LogParser
     {
         try
         {
-            var parts = line.Trim().TrimStart(',').TrimEnd(',').Split(',');
+            // Strip trailing comma to avoid phantom empty field in split
+            var trimmedLine = line.Trim().TrimStart(',');
+            if (trimmedLine.EndsWith(','))
+                trimmedLine = trimmedLine.TrimEnd(',');
+            var parts = trimmedLine.Split(',');
             if (parts.Length < columnNames.Length)
                 return null;
 
-            // Filter out empty trailing entries (from trailing commas)
+            // Filter out empty entries (from multiple consecutive commas)
             var filteredParts = parts.Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => f.Trim()).ToArray();
             if (filteredParts.Length < columnNames.Length)
                 return null;
@@ -224,6 +325,17 @@ public class LogParser
 
             bool hasPin = columnNames.Length > 0 && columnNames[0].Equals("Pin", StringComparison.OrdinalIgnoreCase);
 
+            // Find ADC measure column position in headers (-1 if not present)
+            int adcCol = -1;
+            if (!hasPin)
+            {
+                for (int i = 0; i < columnNames.Length; i++)
+                {
+                    if (columnNames[i].Contains("AdcMeasure", StringComparison.OrdinalIgnoreCase))
+                    { adcCol = i; break; }
+                }
+            }
+
             if (hasPin && columnNames.Length >= 6)
             {
                 if (!int.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out actualChannel))
@@ -233,6 +345,20 @@ public class LogParser
                 lowLimit = ParseDouble(parts[3]);
                 upLimit = ParseDouble(parts[4]);
                 difference = ParseDouble(parts[5]);
+            }
+            else if (columnNames.Length >= 5 && adcCol >= 0 && adcCol < columnNames.Length - 3)
+            {
+                // ADC column present: columns are [expect, measure, ...adc..., lowLimit, upLimit, difference]
+                int lowIdx = adcCol + 1;
+                int upIdx = adcCol + 2;
+                int diffIdx = adcCol + 3;
+                if (diffIdx >= columnNames.Length || parts.Length < diffIdx + 1)
+                    return null;
+                expect = ParseDouble(parts[0]);
+                measure = ParseDouble(parts[1]);
+                lowLimit = ParseDouble(parts[lowIdx]);
+                upLimit = ParseDouble(parts[upIdx]);
+                difference = ParseDouble(parts[diffIdx]);
             }
             else if (columnNames.Length >= 6)
             {

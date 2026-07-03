@@ -51,6 +51,9 @@ public class CacheService : IDisposable
                 is_failed INTEGER DEFAULT 0,
                 is_retest INTEGER DEFAULT 0,
                 line_number INTEGER DEFAULT 0,
+                wave_value REAL,
+                offset_value REAL,
+                diff_value REAL,
                 FOREIGN KEY (file_id) REFERENCES log_files(file_id)
             );
             CREATE INDEX IF NOT EXISTS idx_tr_lookup
@@ -82,6 +85,15 @@ public class CacheService : IDisposable
                 FOREIGN KEY (file_id) REFERENCES log_files(file_id)
             );";
         cmd.ExecuteNonQuery();
+
+        // Migration: add wave_value and offset_value columns if they don't exist
+        using var alterCmd = _connection.CreateCommand();
+        alterCmd.CommandText = "ALTER TABLE test_results ADD COLUMN wave_value REAL";
+        try { alterCmd.ExecuteNonQuery(); } catch { /* column already exists */ }
+        alterCmd.CommandText = "ALTER TABLE test_results ADD COLUMN offset_value REAL";
+        try { alterCmd.ExecuteNonQuery(); } catch { /* column already exists */ }
+        alterCmd.CommandText = "ALTER TABLE test_results ADD COLUMN diff_value REAL";
+        try { alterCmd.ExecuteNonQuery(); } catch { /* column already exists */ }
     }
 
     public long? FindFileByHash(string hash)
@@ -126,8 +138,8 @@ public class CacheService : IDisposable
         cmd.Transaction = transaction;
         cmd.CommandText = @"INSERT INTO test_results (file_id, loop_index, module_type, slot_number, channel_id,
                 test_item_name, expect_value, measure_value, low_limit, up_limit,
-                difference_value, is_failed, is_retest, line_number)
-            VALUES (@fid, @loop, @mod, @slot, @ch, @test, @exp, @meas, @low, @up, @diff, @fail, @retest, @line)";
+                difference_value, is_failed, is_retest, line_number, wave_value, offset_value, diff_value)
+            VALUES (@fid, @loop, @mod, @slot, @ch, @test, @exp, @meas, @low, @up, @diff, @fail, @retest, @line, @wave, @offset, @diffval)";
 
         var pFid = cmd.CreateParameter(); pFid.ParameterName = "@fid"; cmd.Parameters.Add(pFid);
         var pLoop = cmd.CreateParameter(); pLoop.ParameterName = "@loop"; cmd.Parameters.Add(pLoop);
@@ -143,6 +155,9 @@ public class CacheService : IDisposable
         var pFail = cmd.CreateParameter(); pFail.ParameterName = "@fail"; cmd.Parameters.Add(pFail);
         var pRetest = cmd.CreateParameter(); pRetest.ParameterName = "@retest"; cmd.Parameters.Add(pRetest);
         var pLine = cmd.CreateParameter(); pLine.ParameterName = "@line"; cmd.Parameters.Add(pLine);
+        var pWave = cmd.CreateParameter(); pWave.ParameterName = "@wave"; cmd.Parameters.Add(pWave);
+        var pOffset = cmd.CreateParameter(); pOffset.ParameterName = "@offset"; cmd.Parameters.Add(pOffset);
+        var pDiffVal = cmd.CreateParameter(); pDiffVal.ParameterName = "@diffval"; cmd.Parameters.Add(pDiffVal);
 
         foreach (var r in results)
         {
@@ -160,6 +175,9 @@ public class CacheService : IDisposable
             pFail.Value = r.IsFailed ? 1 : 0;
             pRetest.Value = r.IsReTest ? 1 : 0;
             pLine.Value = r.LineNumber;
+            pWave.Value = (object?)r.WaveValue ?? DBNull.Value;
+            pOffset.Value = (object?)r.OffsetValue ?? DBNull.Value;
+            pDiffVal.Value = (object?)r.DiffValue ?? DBNull.Value;
             cmd.ExecuteNonQuery();
         }
         transaction.Commit();
@@ -247,15 +265,20 @@ public class CacheService : IDisposable
         return list;
     }
 
-    public List<string> GetDistinctTestItems(long[] fileIds, string? moduleType = null, int? channelId = null)
+    public List<string> GetDistinctTestItems(long[] fileIds, string? moduleType = null, int[]? channelIds = null)
     {
         using var cmd = _connection.CreateCommand();
         var where = BuildFileIdWhere(fileIds);
         if (moduleType != null) where += " AND module_type = @mod";
-        if (channelId.HasValue) where += " AND channel_id = @ch";
+        if (channelIds != null && channelIds.Length > 0)
+        {
+            var chParams = string.Join(",", channelIds.Select((_, i) => "@ch" + i));
+            where += " AND channel_id IN (" + chParams + ")";
+            for (int i = 0; i < channelIds.Length; i++)
+                cmd.Parameters.AddWithValue("@ch" + i, channelIds[i]);
+        }
         cmd.CommandText = "SELECT DISTINCT test_item_name FROM test_results WHERE " + where + " ORDER BY test_item_name";
         if (moduleType != null) cmd.Parameters.AddWithValue("@mod", moduleType);
-        if (channelId.HasValue) cmd.Parameters.AddWithValue("@ch", channelId.Value);
         AddFileIdParams(cmd, fileIds);
         var list = new List<string>();
         using var reader = cmd.ExecuteReader();
@@ -289,7 +312,7 @@ public class CacheService : IDisposable
         if (moduleType != null) where += " AND module_type = @mod";
         if (testItem != null) where += " AND test_item_name = @test";
         if (search != null) where += " AND test_item_name LIKE @search";
-        cmd.CommandText = "SELECT file_id, loop_index, module_type, slot_number, channel_id, test_item_name, expect_value, measure_value, low_limit, up_limit, difference_value, is_failed, is_retest, line_number FROM test_results WHERE " + where + " ORDER BY loop_index, channel_id, expect_value";
+        cmd.CommandText = "SELECT file_id, loop_index, module_type, slot_number, channel_id, test_item_name, expect_value, measure_value, low_limit, up_limit, difference_value, is_failed, is_retest, line_number, wave_value, offset_value, diff_value FROM test_results WHERE " + where + " ORDER BY loop_index, channel_id, expect_value";
         if (moduleType != null) cmd.Parameters.AddWithValue("@mod", moduleType);
         if (testItem != null) cmd.Parameters.AddWithValue("@test", testItem);
         if (search != null) cmd.Parameters.AddWithValue("@search", "%" + search + "%");
@@ -440,7 +463,10 @@ public class CacheService : IDisposable
             Difference = reader.GetDouble(10),
             IsFailed = reader.GetInt32(11) == 1,
             IsReTest = reader.GetInt32(12) == 1,
-            LineNumber = reader.GetInt32(13)
+            LineNumber = reader.GetInt32(13),
+            WaveValue = reader.IsDBNull(14) ? null : reader.GetDouble(14),
+            OffsetValue = reader.IsDBNull(15) ? null : reader.GetDouble(15),
+            DiffValue = reader.IsDBNull(16) ? null : reader.GetDouble(16)
         };
     }
 

@@ -1,4 +1,4 @@
-namespace SSTLogAnalyser.Models;
+﻿namespace SSTLogAnalyser.Models;
 
 public class TestResult
 {
@@ -16,4 +16,7 @@ public class TestResult
     public bool IsFailed { get; set; }
     public bool IsReTest { get; set; }
     public int LineNumber { get; set; }
+    public double? WaveValue { get; set; }
+    public double? OffsetValue { get; set; }
+    public double? DiffValue { get; set; }
 }
