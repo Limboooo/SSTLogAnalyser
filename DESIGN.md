@@ -17,60 +17,60 @@ SST Log Analyser is a WPF desktop application for parsing, visualizing, and comp
 ## Architecture
 
 ```
-©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´
-©¦                  MainWindow.xaml            ©¦
-©¦  ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´  ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´ ©¦
-©¦  ©¦  Filter   ©¦  ©¦     TabControl          ©¦ ©¦
-©¦  ©¦  Panel    ©¦  ©¦  ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´  ©¦ ©¦
-©¦  ©¦           ©¦  ©¦  ©¦ Chart (LiveCharts)©¦  ©¦ ©¦
-©¦  ©¦ - Module  ©¦  ©¦  ©¦ + Custom Legend   ©¦  ©¦ ©¦
-©¦  ©¦ - Channel ©¦  ©¦  ©¦ + Custom Tooltip  ©¦  ©¦ ©¦
-©¦  ©¦ - TestItem©¦  ©¦  ©À©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©È  ©¦ ©¦
-©¦  ©¦ - Loop    ©¦  ©¦  ©¦ Data (raw table)  ©¦  ©¦ ©¦
-©¦  ©¦ - Mode    ©¦  ©¦  ©¦ Pass/Fail Matrix  ©¦  ©¦ ©¦
-©¦  ©¦           ©¦  ©¦  ©¦ Statistics        ©¦  ©¦ ©¦
-©¦  ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼  ©¦  ©¦ Errors / FATAL    ©¦  ©¦ ©¦
-©¦                ©¦  ©¦ Device Info       ©¦  ©¦ ©¦
-©¦                ©¦  ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼  ©¦ ©¦
-©¦                ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼ ©¦
-©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©Ğ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼
-                      ©¦ Binding
-©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤¨‹©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´
-©¦           MainViewModel (MVVM)              ©¦
-©¦  - File loading & parsing orchestration     ©¦
-©¦  - Filter state & reactive chart updates    ©¦
-©¦  - Series/Axes data for LiveCharts2         ©¦
-©¦  - Tooltip hit-testing logic                ©¦
-©¸©¤©¤©¤©¤©¤©¤©¤©Ğ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©Ğ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼
-        ©¦                  ©¦
-©°©¤©¤©¤©¤©¤©¤©¤¨‹©¤©¤©¤©¤©¤©¤©¤©´  ©°©¤©¤©¤©¤©¤©¤©¤¨‹©¤©¤©¤©¤©¤©¤©¤©¤©´
-©¦  LogParser    ©¦  ©¦  CacheService  ©¦
-©¦  (regex-based ©¦  ©¦  (SQLite CRUD) ©¦
-©¦   extraction) ©¦  ©¦                ©¦
-©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼  ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                  MainWindow.xaml            â”‚
+â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â” â”‚
+â”‚  â”‚  Filter   â”‚  â”‚     TabControl          â”‚ â”‚
+â”‚  â”‚  Panel    â”‚  â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚ â”‚
+â”‚  â”‚           â”‚  â”‚  â”‚ Chart (LiveCharts)â”‚  â”‚ â”‚
+â”‚  â”‚ - Module  â”‚  â”‚  â”‚ + Custom Legend   â”‚  â”‚ â”‚
+â”‚  â”‚ - Channel â”‚  â”‚  â”‚ + Custom Tooltip  â”‚  â”‚ â”‚
+â”‚  â”‚ - TestItemâ”‚  â”‚  â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤  â”‚ â”‚
+â”‚  â”‚ - Loop    â”‚  â”‚  â”‚ Data (raw table)  â”‚  â”‚ â”‚
+â”‚  â”‚ - Mode    â”‚  â”‚  â”‚ Pass/Fail Matrix  â”‚  â”‚ â”‚
+â”‚  â”‚           â”‚  â”‚  â”‚ Statistics        â”‚  â”‚ â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚  â”‚ Errors / FATAL    â”‚  â”‚ â”‚
+â”‚                â”‚  â”‚ Device Info       â”‚  â”‚ â”‚
+â”‚                â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚ â”‚
+â”‚                â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                      â”‚ Binding
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚           MainViewModel (MVVM)              â”‚
+â”‚  - File loading & parsing orchestration     â”‚
+â”‚  - Filter state & reactive chart updates    â”‚
+â”‚  - Series/Axes data for LiveCharts2         â”‚
+â”‚  - Tooltip hit-testing logic                â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+        â”‚                  â”‚
+â”Œâ”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”  â”Œâ”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  LogParser    â”‚  â”‚  CacheService  â”‚
+â”‚  (regex-based â”‚  â”‚  (SQLite CRUD) â”‚
+â”‚   extraction) â”‚  â”‚                â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ## Data Flow
 
 ```
-LOG File ©¤©¤? SHA256 Hash ©¤©¤? Cache Lookup
-   ©¦                              ©¦
-   ©¦ (miss)                  (hit)
-   ¨‹                              ©¦
-LogParser.ParseAsync()            ©¦
-   ©¦                              ©¦
-   ©À©¤©¤ FileInfo (loops, metadata) ©¦
-   ©À©¤©¤ TestResults                ©¦
-   ©À©¤©¤ Devices (group/location)   ©¦
-   ©À©¤©¤ Errors (ERROR/FATAL lines) ©¦
-   ©¸©¤©¤ SystemInfo (version, etc.) ©¦
-                                  ¨‹
+LOG File â”€â”€? SHA256 Hash â”€â”€? Cache Lookup
+   â”‚                              â”‚
+   â”‚ (miss)                  (hit)
+   â–¼                              â”‚
+LogParser.ParseAsync()            â”‚
+   â”‚                              â”‚
+   â”œâ”€â”€ FileInfo (loops, metadata) â”‚
+   â”œâ”€â”€ TestResults                â”‚
+   â”œâ”€â”€ Devices (group/location)   â”‚
+   â”œâ”€â”€ Errors (ERROR/FATAL lines) â”‚
+   â””â”€â”€ SystemInfo (version, etc.) â”‚
+                                  â–¼
                           CacheService (SQLite)
-                                  ©¦
-                                  ¨‹
+                                  â”‚
+                                  â–¼
                           QueryTestResults()
-                                  ©¦
-                                  ¨‹
+                                  â”‚
+                                  â–¼
                           UpdateChart() / RefreshViews()
 ```
 
@@ -81,7 +81,7 @@ The `LogParser` processes LOG files line by line using regex and string matching
 | Category | Extraction Method |
 |----------|------------------|
 | Tool Version | Regex `Version:\s*([\d.]+)` |
-| Software Drivers | Regex `SoftwareName:\s*(\S+)\s+FileVersion:\s*(\S+)` ¡ª checked before Tool Version to avoid false match |
+| Software Drivers | Regex `SoftwareName:\s*(\S+)\s+FileVersion:\s*(\S+)` â€” checked before Tool Version to avoid false match |
 | DMM Temperature | Regex for temperature values |
 | System Clock | Regex for MHz values |
 | TMU Calibration | Regex extracting CalDate, CalValue, NextCalDate |
@@ -131,11 +131,11 @@ difference_value, is_failed, is_retest, line_number,
 wave_value, offset_value, diff_value
 ```
 
-**devices** ¡ª `file_id, group_number, location_id, slot_info, device_name`
+**devices** â€” `file_id, group_number, location_id, slot_info, device_name`
 
-**errors** ¡ª `file_id, loop_index, timestamp, level, message, line_number`
+**errors** â€” `file_id, loop_index, timestamp, level, message, line_number`
 
-**system_info** ¡ª `file_id, key, value`
+**system_info** â€” `file_id, key, value`
 
 File deduplication is handled by SHA256 hash. Re-loading a previously parsed file retrieves results from cache without re-parsing.
 
@@ -145,10 +145,10 @@ File deduplication is handled by SHA256 hash. Re-loading a previously parsed fil
 
 For each data group (channel or loop), the chart generates up to 4 series:
 
-1. **Data line** (`LineSeries<ObservablePoint>`) ¡ª Expected vs Difference, colored from a 12-color palette
-2. **High Limit line** ¡ª dashed red, drawn only for the first group to avoid visual clutter
-3. **Low Limit line** ¡ª dashed blue, drawn only for the first group
-4. **Failed points** (`ScatterSeries<ObservablePoint>`) ¡ª red markers, only if failures exist
+1. **Data line** (`LineSeries<ObservablePoint>`) â€” Expected vs Difference, colored from a 12-color palette
+2. **High Limit line** â€” dashed red, drawn only for the first group to avoid visual clutter
+3. **Low Limit line** â€” dashed blue, drawn only for the first group
+4. **Failed points** (`ScatterSeries<ObservablePoint>`) â€” red markers, only if failures exist
 
 ### MIXI Limit Line Conversion
 
@@ -190,12 +190,12 @@ Modes are mutually exclusive via radio buttons. Selecting one deselects the othe
 ## Filter Pipeline
 
 ```
-LoadedFiles ¡ú AvailableModules (distinct module types)
-SelectedModule ¡ú AvailableChannels, AvailableTestItems, AvailableLoops
-SelectedChannels ¡ú AvailableTestItems (filtered by selected channels)
-SelectedTestItem ¡ú AvailableLoops (further filtered)
-SearchText ¡ú AvailableTestItems (substring filter)
-SelectedChannels + SelectedLoops ¡ú QueryTestResults ¡ú UpdateChart
+LoadedFiles â†’ AvailableModules (distinct module types)
+SelectedModule â†’ AvailableChannels, AvailableTestItems, AvailableLoops
+SelectedChannels â†’ AvailableTestItems (filtered by selected channels)
+SelectedTestItem â†’ AvailableLoops (further filtered)
+SearchText â†’ AvailableTestItems (substring filter)
+SelectedChannels + SelectedLoops â†’ QueryTestResults â†’ UpdateChart
 ```
 
 For MIXI (AWG/DTZ), selecting a channel filters the test item list to only show items belonging to that channel, since AWG and DTZ channels have distinct test item sets.
@@ -207,7 +207,7 @@ All filter changes trigger reactive updates via `CommunityToolkit.Mvvm` partial 
 The Data tab displays all raw `TestResult` rows currently plotted in the chart. Key features:
 
 - **Live population**: `ChartDataRows` (ObservableCollection) is populated alongside chart series in `UpdateChart()`
-- **Chart click ¡ú table select**: Clicking a data point on the chart finds the nearest `TooltipDataPoint`, reads its `RowIndex`, selects the corresponding row in the Data tab, switches to the Data tab, and scrolls into view
+- **Chart click â†’ table select**: Clicking a data point on the chart finds the nearest `TooltipDataPoint`, reads its `RowIndex`, selects the corresponding row in the Data tab, switches to the Data tab, and scrolls into view
 - **Failed row highlighting**: Rows with `IsFailed = true` are styled with a light red background via DataTrigger
 - **Virtualized scrolling**: `VirtualizingPanel.IsVirtualizing="True"` for large datasets
 
@@ -243,24 +243,24 @@ Each tab header includes a `[+]` button that detaches the tab content into a flo
 
 ```
 SSTLogAnalyser/
-©À©¤©¤ Models/
-©¦   ©À©¤©¤ DeviceInfo.cs
-©¦   ©À©¤©¤ ErrorLogEntry.cs
-©¦   ©À©¤©¤ LogFileInfo.cs
-©¦   ©À©¤©¤ ModuleType.cs
-©¦   ©À©¤©¤ SystemInfo.cs
-©¦   ©¸©¤©¤ TestResult.cs
-©À©¤©¤ Services/
-©¦   ©À©¤©¤ CacheService.cs      # SQLite CRUD & query builders
-©¦   ©À©¤©¤ FileHashService.cs   # SHA256 computation
-©¦   ©¸©¤©¤ LogParser.cs         # Regex-based log extraction
-©À©¤©¤ ViewModels/
-©¦   ©¸©¤©¤ MainViewModel.cs     # MVVM, chart logic, filter state
-©À©¤©¤ Converters/
-©¦   ©¸©¤©¤ Converters.cs        # BoolToVisibility, FailCountToColor
-©À©¤©¤ App.xaml / App.xaml.cs
-©À©¤©¤ MainWindow.xaml           # UI layout
-©À©¤©¤ MainWindow.xaml.cs        # Drag-drop, tooltip mouse events
-©À©¤©¤ SSTLogAnalyser.csproj
-©¸©¤©¤ .gitignore
+â”œâ”€â”€ Models/
+â”‚   â”œâ”€â”€ DeviceInfo.cs
+â”‚   â”œâ”€â”€ ErrorLogEntry.cs
+â”‚   â”œâ”€â”€ LogFileInfo.cs
+â”‚   â”œâ”€â”€ ModuleType.cs
+â”‚   â”œâ”€â”€ SystemInfo.cs
+â”‚   â””â”€â”€ TestResult.cs
+â”œâ”€â”€ Services/
+â”‚   â”œâ”€â”€ CacheService.cs      # SQLite CRUD & query builders
+â”‚   â”œâ”€â”€ FileHashService.cs   # SHA256 computation
+â”‚   â””â”€â”€ LogParser.cs         # Regex-based log extraction
+â”œâ”€â”€ ViewModels/
+â”‚   â””â”€â”€ MainViewModel.cs     # MVVM, chart logic, filter state
+â”œâ”€â”€ Converters/
+â”‚   â””â”€â”€ Converters.cs        # BoolToVisibility, FailCountToColor
+â”œâ”€â”€ App.xaml / App.xaml.cs
+â”œâ”€â”€ MainWindow.xaml           # UI layout
+â”œâ”€â”€ MainWindow.xaml.cs        # Drag-drop, tooltip mouse events
+â”œâ”€â”€ SSTLogAnalyser.csproj
+â””â”€â”€ .gitignore
 ```
