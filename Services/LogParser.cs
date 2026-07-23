@@ -10,6 +10,10 @@ public class LogParser
     private static readonly Regex TimestampRegex = new(@"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2},\d{3})\s+(INFO|ERROR|FATAL|WARN)\s+-\s*(.*)", RegexOptions.Compiled);
     private static readonly Regex LoopRegex = new(@"Index\s+(\d+)\s+of\s+(\d+)", RegexOptions.Compiled);
     private static readonly Regex VerificationHeaderRegex = new(@"^(Re-test\s+)?(\w+)\s+Channel\s+(\d+):\s*(.+?),\s*(.+)\s+Verification\s*$", RegexOptions.Compiled);
+    private static readonly Regex CalibrationHeaderRegex = new(@"^(\w+)\s+Channel\s+(\d+):\s*(.+?)\s+Calibration\s*$", RegexOptions.Compiled);
+    private static readonly Regex CoefficientRegex = new(@"^(\w+)\s+(.+?)\s+Gain:\s*([\d.\-Ee+]+),\s*Offset:\s*([\d.\-Ee+]+)", RegexOptions.Compiled);
+    private static readonly Regex MixiCoefficientRegex = new(@"^(?:-+[^-]+-+\s+)?M/C\s+M\s*[:=]\s*([\d.\-Ee+]+)\s*[,;]?\s*C\s*[:=]\s*([\d.\-Ee+]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex MixiCoefficientSummaryRegex = new(@"^\w+\s+(AWG|DTZ)\s*(\d+)\s*,\s*([^,]+)\s*,\s*M\s*[:=]\s*([\d.\-Ee+]+)\s*,\s*C\s*[:=]\s*([\d.\-Ee+]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex PeVerificationRegex = new(@"^Pin:\s*(\d+)\s+the\s+(.+)\s+Verification:\s*(Pass|Fail)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex PeTestHeaderRegex = new(@"^(Re-test\s+)?(?:(?:PE\s+)?(\w+))\s+Verification\s*$", RegexOptions.Compiled);
     private static readonly Regex DeviceGroupRegex = new(@"^Group\s+(\d+):\s*Location\s+(\d+)\((\d+)\)->\s*Slot\s+(.+?):\s*(.+?)\((\d+)\)", RegexOptions.Compiled);
@@ -19,7 +23,7 @@ public class LogParser
     private static readonly Regex TmuCalRegex = new(@"TMU\s+CalDate:\s*(.+?);\s*Tmu\s+Cal\s+Value:\s*(.+?);\s*Tmu\s+Next\s+CalDate:\s*(.+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex SoftwareNameRegex = new(@"SoftwareName:\s*(.+?)\s+FileVersion:\s*(.+)", RegexOptions.Compiled);
     private static readonly Regex MixiHeaderRegex = new(@"^(AWG|DTZ)\s+CH\s+(\d+)\s+(.+)$", RegexOptions.Compiled);
-    private static readonly Regex MixiDataRegex = new(@"--\S+--\s+Target:[\d.\-Ee+]+.*?Meas:([\d.\-Ee+]+)\s+LowLimit:([\d.\-Ee+]+)\s+HighLimit:([\d.\-Ee+]+)\s+Meas-Target:([\d.\-Ee+]+)", RegexOptions.Compiled);
+    private static readonly Regex MixiDataRegex = new(@"--(?<component>.+?)--\s+Target:[\d.\-Ee+]+.*?Meas:(?<measure>[\d.\-Ee+]+)\s+LowLimit:(?<low>[\d.\-Ee+]+)\s+HighLimit:(?<high>[\d.\-Ee+]+)\s+Meas-Target:(?<difference>[\d.\-Ee+]+)", RegexOptions.Compiled);
 
     public async Task<ParseResult> ParseAsync(string filePath, IProgress<ParseProgress>? progress = null, CancellationToken ct = default)
     {
@@ -45,6 +49,7 @@ public class LogParser
         bool inMixiBlock = false;
         string? mixiTestItem = null;
         int mixiChannel = 0;
+        string? currentCalibrationItem = null;
 
         using var reader = new StreamReader(filePath);
         int lineNumber = 0;
@@ -104,6 +109,56 @@ public class LogParser
                 continue;
             }
 
+            var calibrationMatch = CalibrationHeaderRegex.Match(message);
+            if (calibrationMatch.Success)
+            {
+                currentModule = ParseModuleType(calibrationMatch.Groups[1].Value.Trim());
+                currentChannel = int.Parse(calibrationMatch.Groups[2].Value);
+                currentCalibrationItem = calibrationMatch.Groups[3].Value.Trim();
+                inDataBlock = false;
+                columnNames = null;
+                continue;
+            }
+
+            var coefficientMatch = CoefficientRegex.Match(message);
+            if (coefficientMatch.Success && currentCalibrationItem != null)
+            {
+                var coefficientModule = ParseModuleType(coefficientMatch.Groups[1].Value.Trim());
+                if (coefficientModule != ModuleType.Unknown && coefficientModule == currentModule)
+                {
+                    AddOrUpdateCalibrationCoefficient(result, new CalibrationCoefficient
+                    {
+                        LoopIndex = currentLoop,
+                        ModuleType = coefficientModule,
+                        ChannelId = currentChannel,
+                        CalibrationItem = currentCalibrationItem,
+                        CoefficientName = NormalizeCoefficientName(coefficientMatch.Groups[2].Value),
+                        Gain = ParseDouble(coefficientMatch.Groups[3].Value),
+                        Offset = ParseDouble(coefficientMatch.Groups[4].Value),
+                        LineNumber = lineNumber
+                    });
+                    continue;
+                }
+            }
+
+            var mixiCoefficientSummaryMatch = MixiCoefficientSummaryRegex.Match(message);
+            if (mixiCoefficientSummaryMatch.Success)
+            {
+                var deviceType = mixiCoefficientSummaryMatch.Groups[1].Value.ToUpperInvariant();
+                AddOrUpdateCalibrationCoefficient(result, new CalibrationCoefficient
+                {
+                    LoopIndex = currentLoop,
+                    ModuleType = ModuleType.MIXI,
+                    ChannelId = int.Parse(mixiCoefficientSummaryMatch.Groups[2].Value),
+                    CalibrationItem = deviceType + " " + mixiCoefficientSummaryMatch.Groups[3].Value.Trim(),
+                    CoefficientName = "M/C",
+                    Gain = ParseDouble(mixiCoefficientSummaryMatch.Groups[4].Value),
+                    Offset = ParseDouble(mixiCoefficientSummaryMatch.Groups[5].Value),
+                    LineNumber = lineNumber
+                });
+                continue;
+            }
+
             var peMatch = PeTestHeaderRegex.Match(message);
             if (peMatch.Success)
             {
@@ -133,16 +188,33 @@ public class LogParser
             // MIXI data line: "--POS-- Target:2.85 Meas:2.88 LowLimit:2.35 HighLimit:3.35 Meas-Target:0.03"
             if (inMixiBlock && mixiTestItem != null)
             {
+                var mixiCoefficientMatch = MixiCoefficientRegex.Match(message);
+                if (mixiCoefficientMatch.Success)
+                {
+                    AddOrUpdateCalibrationCoefficient(result, new CalibrationCoefficient
+                    {
+                        LoopIndex = currentLoop,
+                        ModuleType = ModuleType.MIXI,
+                        ChannelId = mixiChannel,
+                        CalibrationItem = mixiTestItem,
+                        CoefficientName = "M/C",
+                        Gain = ParseDouble(mixiCoefficientMatch.Groups[1].Value),
+                        Offset = ParseDouble(mixiCoefficientMatch.Groups[2].Value),
+                        LineNumber = lineNumber
+                    });
+                    continue;
+                }
+
                 var mixiDataMatch = MixiDataRegex.Match(message);
                 if (mixiDataMatch.Success)
                 {
                     // Extract Target value separately (may have extra content like [WAVE:... OFFSET:...])
                     var targetMatch = System.Text.RegularExpressions.Regex.Match(message, @"Target:([\d.\-Ee+]+)");
                     double target = targetMatch.Success ? ParseDouble(targetMatch.Groups[1].Value) : 0;
-                    double meas = ParseDouble(mixiDataMatch.Groups[1].Value);
-                    double lowLimit = ParseDouble(mixiDataMatch.Groups[2].Value);
-                    double upLimit = ParseDouble(mixiDataMatch.Groups[3].Value);
-                    double diff = ParseDouble(mixiDataMatch.Groups[4].Value);
+                    double meas = ParseDouble(mixiDataMatch.Groups["measure"].Value);
+                    double lowLimit = ParseDouble(mixiDataMatch.Groups["low"].Value);
+                    double upLimit = ParseDouble(mixiDataMatch.Groups["high"].Value);
+                    double diff = ParseDouble(mixiDataMatch.Groups["difference"].Value);
                     // MIXI limits are absolute bounds on Meas, not on Difference (Meas-Target)
                     bool isFailed = meas > upLimit || meas < lowLimit;
 
@@ -170,7 +242,8 @@ public class LogParser
                         LineNumber = lineNumber,
                         WaveValue = waveValue,
                         OffsetValue = offsetValue,
-                        DiffValue = diff
+                        DiffValue = diff,
+                        ComponentType = mixiDataMatch.Groups["component"].Value.Trim().Trim('-').Trim()
                     });
                     continue;
                 }
@@ -293,6 +366,24 @@ public class LogParser
         if (!string.IsNullOrEmpty(range))
             return range + ", " + test;
         return test;
+    }
+
+    private static string NormalizeCoefficientName(string name) =>
+        name.Trim().Replace("'s", string.Empty, StringComparison.OrdinalIgnoreCase);
+
+    private static void AddOrUpdateCalibrationCoefficient(ParseResult result, CalibrationCoefficient coefficient)
+    {
+        var existingIndex = result.CalibrationCoefficients.FindIndex(existing =>
+            existing.LoopIndex == coefficient.LoopIndex &&
+            existing.ModuleType == coefficient.ModuleType &&
+            existing.ChannelId == coefficient.ChannelId &&
+            existing.CalibrationItem.Equals(coefficient.CalibrationItem, StringComparison.OrdinalIgnoreCase) &&
+            existing.CoefficientName.Equals(coefficient.CoefficientName, StringComparison.OrdinalIgnoreCase));
+
+        if (existingIndex >= 0)
+            result.CalibrationCoefficients[existingIndex] = coefficient;
+        else
+            result.CalibrationCoefficients.Add(coefficient);
     }
 
     private static string[] ParseCsvFields(string line)
@@ -478,6 +569,7 @@ public class ParseResult
     public List<DeviceInfo> Devices { get; set; } = new();
     public List<ErrorLogEntry> Errors { get; set; } = new();
     public List<SystemInfo> SystemInfos { get; set; } = new();
+    public List<CalibrationCoefficient> CalibrationCoefficients { get; set; } = new();
 }
 
 public record ParseProgress(int Percent, int LinesRead, int DataPoints);

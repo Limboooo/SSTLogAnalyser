@@ -4,6 +4,7 @@
         xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
         xmlns:conv="clr-namespace:SSTLogAnalyser.Converters"
         Title="SST Log Analyser" Height="900" Width="1400"
+        Icon="Assets/AppIcon.ico"
         WindowStartupLocation="CenterScreen"
         AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver"
         Background="#F5F5F5">
@@ -18,6 +19,70 @@
         <Style TargetType="Button">
             <Setter Property="Padding" Value="12,4"/>
             <Setter Property="Margin" Value="4,2"/>
+        </Style>
+        <Style x:Key="LegendPageButtonStyle" TargetType="RepeatButton">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="Transparent"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="LegendThumbStyle" TargetType="Thumb">
+            <Setter Property="Background" Value="#9AA1AA"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Margin="1,0" Background="{TemplateBinding Background}" CornerRadius="3"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#6F7782"/>
+                </Trigger>
+                <Trigger Property="IsDragging" Value="True">
+                    <Setter Property="Background" Value="#4F5863"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="LegendScrollBarStyle" TargetType="ScrollBar">
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Width="8" Background="{TemplateBinding Background}">
+                            <Border Width="4" HorizontalAlignment="Center" Background="#12000000" CornerRadius="2"/>
+                            <Track x:Name="PART_Track"
+                                   IsDirectionReversed="True"
+                                   Minimum="{TemplateBinding Minimum}"
+                                   Maximum="{TemplateBinding Maximum}"
+                                   ViewportSize="{TemplateBinding ViewportSize}"
+                                   Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Style="{StaticResource LegendPageButtonStyle}"
+                                                  Command="{x:Static ScrollBar.PageUpCommand}"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource LegendThumbStyle}"/>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Style="{StaticResource LegendPageButtonStyle}"
+                                                  Command="{x:Static ScrollBar.PageDownCommand}"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
 
@@ -75,18 +140,44 @@
                         <ListBox ItemsSource="{Binding AvailableModules}" SelectedItem="{Binding SelectedModule}" MaxHeight="120"/>
                     </GroupBox>
                     <GroupBox Header="Channels / Pins">
-                        <ListBox ItemsSource="{Binding AvailableChannels}" SelectionMode="Extended" MaxHeight="150" SelectionChanged="ChannelList_SelectionChanged"/>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <Button Content="ALL" Width="44" Height="22" Margin="2,2,2,4"
+                                    HorizontalAlignment="Left" Padding="0"
+                                    Click="AllChannels_Click" ToolTip="Show all channels"/>
+                            <ListBox x:Name="ChannelList" Grid.Row="1"
+                                     ItemsSource="{Binding AvailableChannels}"
+                                     SelectionMode="Extended" MaxHeight="150"
+                                     SelectionChanged="ChannelList_SelectionChanged"/>
+                        </Grid>
                     </GroupBox>
                     <GroupBox Header="Test Item">
                         <ListBox ItemsSource="{Binding AvailableTestItems}" SelectedItem="{Binding SelectedTestItem}" MaxHeight="180"/>
                     </GroupBox>
                     <GroupBox Header="Loops">
-                        <ListBox ItemsSource="{Binding AvailableLoops}" SelectionMode="Extended" MaxHeight="120" SelectionChanged="LoopList_SelectionChanged"/>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <Button Content="ALL" Width="44" Height="22" Margin="2,2,2,4"
+                                    HorizontalAlignment="Left" Padding="0"
+                                    Click="AllLoops_Click" ToolTip="Show all loops"/>
+                            <ListBox x:Name="LoopList" Grid.Row="1"
+                                     ItemsSource="{Binding AvailableLoops}"
+                                     SelectionMode="Extended" MaxHeight="120"
+                                     SelectionChanged="LoopList_SelectionChanged"/>
+                        </Grid>
                     </GroupBox>
                     <GroupBox Header="Comparison Mode">
                         <StackPanel>
-                            <RadioButton Content="Multi-Channel (same loop)" IsChecked="{Binding CompareMultiChannel}" Margin="0,2"/>
-                            <RadioButton Content="Multi-Loop (same channel)" IsChecked="{Binding CompareMultiLoop}" Margin="0,2"/>
+                            <RadioButton Content="Multi-Channel (same loop)" IsChecked="{Binding CompareMultiChannel}"
+                                         Checked="MultiChannel_Checked" Margin="0,2"/>
+                            <RadioButton Content="Multi-Loop (same channel)" IsChecked="{Binding CompareMultiLoop}"
+                                         Checked="MultiLoop_Checked" Margin="0,2"/>
                         </StackPanel>
                     </GroupBox>
                     <GroupBox Header="Rendering">
@@ -109,34 +200,65 @@
                         </StackPanel>
                     </TabItem.Header>
                     <Grid Margin="4">
-                        <lvc:CartesianChart x:Name="MainChart" MouseLeftButtonDown="MainChart_MouseLeftButtonDown"
+                        <lvc:CartesianChart x:Name="MainChart"
+                            PreviewMouseLeftButtonDown="MainChart_PreviewMouseLeftButtonDown"
+                            PreviewMouseLeftButtonUp="MainChart_PreviewMouseLeftButtonUp"
                             Series="{Binding Series}"
                             XAxes="{Binding XAxes}"
                             YAxes="{Binding YAxes}"
+                            ZoomMode="Both"
+                            ZoomingSpeed="0.15"
                             Background="White"
                             TooltipPosition="Hidden"
                             LegendPosition="Hidden"
                             MouseMove="MainChart_MouseMove"
                             MouseLeave="MainChart_MouseLeave"/>
                         <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8" Panel.ZIndex="5">
-                            <Button Content="Legend" Width="56" Height="22" FontSize="10"
-                                    Background="#B0FFFFFF" BorderBrush="#AAA" Padding="0"
-                                    Command="{Binding ToggleLegendCommand}"
-                                    ToolTip="Show/Hide Legend"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="Show all" Width="56" Height="22" FontSize="10" Margin="0,0,4,0"
+                                        Background="#B0FFFFFF" BorderBrush="#AAA" Padding="0"
+                                        Command="{Binding ShowAllSeriesCommand}"
+                                        Visibility="{Binding HasSeriesFocus, Converter={StaticResource BoolToVis}}"
+                                        ToolTip="Show all chart series"/>
+                                <Button Content="Reset" Width="48" Height="22" FontSize="10" Margin="0,0,4,0"
+                                        Background="#B0FFFFFF" BorderBrush="#AAA" Padding="0"
+                                        Command="{Binding ResetChartZoomCommand}"
+                                        ToolTip="Reset chart zoom; left-drag to pan, right-drag to zoom by section"/>
+                                <Button Content="Legend" Width="56" Height="22" FontSize="10"
+                                        Background="#B0FFFFFF" BorderBrush="#AAA" Padding="0"
+                                        Command="{Binding ToggleLegendCommand}"
+                                        ToolTip="Show/Hide Legend"/>
+                            </StackPanel>
                             <Border CornerRadius="4" Padding="8,4" Margin="0,2,0,0"
+                                    MaxWidth="280"
                                     Background="#B0FFFFFF" BorderBrush="#DDD" BorderThickness="1"
                                     Visibility="{Binding ShowLegend, Converter={StaticResource BoolToVis}}">
-                                <ItemsControl ItemsSource="{Binding LegendItems}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Orientation="Horizontal" Margin="0,1">
-                                                <Rectangle Width="14" Height="3" Margin="0,0,6,0" VerticalAlignment="Center"
-                                                           Fill="{Binding ColorBrush}"/>
-                                                <TextBlock Text="{Binding Name}" FontSize="10" Foreground="#333"/>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                <ScrollViewer MaxHeight="360"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <ScrollViewer.Resources>
+                                        <Style TargetType="ScrollBar" BasedOn="{StaticResource LegendScrollBarStyle}"/>
+                                    </ScrollViewer.Resources>
+                                    <ItemsControl ItemsSource="{Binding LegendItems}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Background="Transparent" BorderThickness="0" Padding="2,1"
+                                                        HorizontalContentAlignment="Left" Cursor="Hand"
+                                                        Command="{Binding DataContext.ToggleSeriesFocusCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        ToolTip="Toggle series focus">
+                                                    <StackPanel Orientation="Horizontal" Opacity="{Binding DisplayOpacity}">
+                                                        <Rectangle Width="14" Height="3" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                                   Fill="{Binding ColorBrush}"/>
+                                                        <TextBlock Text="{Binding Name}" FontSize="10" Foreground="#333"
+                                                                   MaxWidth="230" TextTrimming="CharacterEllipsis"
+                                                                   ToolTip="{Binding Name}" FontWeight="{Binding FontWeight}"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
                             </Border>
                         </StackPanel>
                         <Border x:Name="TooltipPanel"
@@ -309,6 +431,166 @@
                                     <DataGridTextColumn Header="Device" Binding="{Binding DeviceName}" Width="*"/>
                                 </DataGrid.Columns>
                             </DataGrid>
+                        </GroupBox>
+                    </Grid>
+                </TabItem>
+                <TabItem x:Name="DiagnosticsTab">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Diagnostics" VerticalAlignment="Center"/>
+                            <Button Content="[+]" FontSize="10" Width="24" Height="18" Padding="0" Margin="4,0,0,0"
+                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                    ToolTip="Detach to floating window"
+                                    Click="DetachTab_Click" Tag="6"/>
+                        </StackPanel>
+                    </TabItem.Header>
+                    <Grid x:Name="DiagnosticsGrid" Margin="4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="340"/>
+                            <ColumnDefinition Width="4"/>
+                            <ColumnDefinition Width="*" MinWidth="340"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" MinHeight="260"/>
+                            <RowDefinition Height="4"/>
+                            <RowDefinition Height="*" MinHeight="260"/>
+                        </Grid.RowDefinitions>
+
+                        <GroupBox x:Name="ToleranceHeatmapPanel" Grid.Row="0" Grid.Column="0" Margin="2">
+                            <GroupBox.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Tolerance Utilization Heatmap" VerticalAlignment="Center"/>
+                                    <Button x:Name="ToleranceHeatmapExpandButton" Width="22" Height="18" Padding="0" Margin="6,0,0,0"
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                            ToolTip="Maximize chart" Click="DiagnosticExpand_Click" Tag="Tolerance">
+                                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE740;" FontSize="11"/>
+                                    </Button>
+                                </StackPanel>
+                            </GroupBox.Header>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="{Binding ToleranceHeatmapSummary}" Margin="6,2" FontSize="11"
+                                           Foreground="#555" TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding ToleranceHeatmapSummary}"/>
+                                <lvc:CartesianChart Grid.Row="1"
+                                                    Series="{Binding ToleranceHeatmapSeries}"
+                                                    XAxes="{Binding ToleranceHeatmapXAxes}"
+                                                    YAxes="{Binding ToleranceHeatmapYAxes}"
+                                                    ZoomMode="Both" ZoomingSpeed="0.15"
+                                                    LegendPosition="Hidden"
+                                                    TooltipPosition="Top"
+                                                    Background="White"/>
+                            </Grid>
+                        </GroupBox>
+
+                        <GridSplitter x:Name="DiagnosticsVerticalSplitter" Grid.Row="0" Grid.RowSpan="3" Grid.Column="1"
+                                      Width="4" HorizontalAlignment="Stretch" Background="#D4D7DA"/>
+
+                        <GroupBox x:Name="CoefficientDistributionPanel" Grid.Row="0" Grid.Column="2" Margin="2">
+                            <GroupBox.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Gain / Offset Distribution" VerticalAlignment="Center"/>
+                                    <Button x:Name="CoefficientDistributionExpandButton" Width="22" Height="18" Padding="0" Margin="6,0,0,0"
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                            ToolTip="Maximize chart" Click="DiagnosticExpand_Click" Tag="Coefficient">
+                                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE740;" FontSize="11"/>
+                                    </Button>
+                                </StackPanel>
+                            </GroupBox.Header>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <DockPanel Margin="6,2">
+                                    <ComboBox DockPanel.Dock="Right" Width="270" Margin="8,0,0,0"
+                                              ItemsSource="{Binding AvailableCoefficientNames}"
+                                              SelectedItem="{Binding SelectedCoefficientName}"
+                                              ToolTip="Calibration coefficient"/>
+                                    <TextBlock Text="{Binding CoefficientSummary}" FontSize="11" Foreground="#555"
+                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding CoefficientSummary}"/>
+                                </DockPanel>
+                                <lvc:CartesianChart Grid.Row="1"
+                                                    Series="{Binding GainSeries}"
+                                                    XAxes="{Binding GainXAxes}"
+                                                    YAxes="{Binding GainYAxes}"
+                                                    ZoomMode="Both" ZoomingSpeed="0.15"
+                                                    LegendPosition="Hidden" TooltipPosition="Top"
+                                                    Background="White"/>
+                                <lvc:CartesianChart Grid.Row="2"
+                                                    Series="{Binding OffsetSeries}"
+                                                    XAxes="{Binding OffsetXAxes}"
+                                                    YAxes="{Binding OffsetYAxes}"
+                                                    ZoomMode="Both" ZoomingSpeed="0.15"
+                                                    LegendPosition="Hidden" TooltipPosition="Top"
+                                                    Background="White"/>
+                            </Grid>
+                        </GroupBox>
+
+                        <GridSplitter x:Name="DiagnosticsHorizontalSplitter" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                                      Height="4" VerticalAlignment="Stretch" Background="#D4D7DA"/>
+
+                        <GroupBox x:Name="ResidualSignaturePanel" Grid.Row="2" Grid.Column="0" Margin="2">
+                            <GroupBox.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Residual Signature" VerticalAlignment="Center"/>
+                                    <Button x:Name="ResidualSignatureExpandButton" Width="22" Height="18" Padding="0" Margin="6,0,0,0"
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                            ToolTip="Maximize chart" Click="DiagnosticExpand_Click" Tag="Residual">
+                                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE740;" FontSize="11"/>
+                                    </Button>
+                                </StackPanel>
+                            </GroupBox.Header>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="{Binding ResidualSummary}" Margin="6,2" FontSize="11"
+                                           Foreground="#555" TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding ResidualSummary}"/>
+                                <lvc:CartesianChart Grid.Row="1"
+                                                    Series="{Binding ResidualSeries}"
+                                                    XAxes="{Binding ResidualXAxes}"
+                                                    YAxes="{Binding ResidualYAxes}"
+                                                    ZoomMode="Both" ZoomingSpeed="0.15"
+                                                    LegendPosition="Top" LegendTextSize="9" TooltipPosition="Top"
+                                                    Background="White"/>
+                            </Grid>
+                        </GroupBox>
+
+                        <GroupBox x:Name="SymmetryPanel" Grid.Row="2" Grid.Column="2" Margin="2">
+                            <GroupBox.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="MIXI / AWG POS-NEG Symmetry" VerticalAlignment="Center"/>
+                                    <Button x:Name="SymmetryExpandButton" Width="22" Height="18" Padding="0" Margin="6,0,0,0"
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                            ToolTip="Maximize chart" Click="DiagnosticExpand_Click" Tag="Symmetry">
+                                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE740;" FontSize="11"/>
+                                    </Button>
+                                </StackPanel>
+                            </GroupBox.Header>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="{Binding SymmetrySummary}" Margin="6,2" FontSize="11"
+                                           Foreground="#555" TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding SymmetrySummary}"/>
+                                <lvc:CartesianChart Grid.Row="1"
+                                                    Series="{Binding SymmetrySeries}"
+                                                    XAxes="{Binding SymmetryXAxes}"
+                                                    YAxes="{Binding SymmetryYAxes}"
+                                                    ZoomMode="Both" ZoomingSpeed="0.15"
+                                                    LegendPosition="Top" TooltipPosition="Top"
+                                                    Background="White"/>
+                            </Grid>
                         </GroupBox>
                     </Grid>
                 </TabItem>

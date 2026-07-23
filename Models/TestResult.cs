@@ -19,4 +19,5 @@ public class TestResult
     public double? WaveValue { get; set; }
     public double? OffsetValue { get; set; }
     public double? DiffValue { get; set; }
+    public string ComponentType { get; set; } = string.Empty;
 }

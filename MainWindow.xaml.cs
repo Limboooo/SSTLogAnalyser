@@ -8,11 +8,16 @@ namespace SSTLogAnalyser;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _vm;
+    private Point? _chartLeftButtonDownPosition;
 
     public MainWindow()
     {
         InitializeComponent();
+        MainTabControl.Items.Remove(DiagnosticsTab);
+        MainTabControl.Items.Insert(1, DiagnosticsTab);
         _vm = new MainViewModel();
+        _vm.AvailableChannels.CollectionChanged += (_, _) => EnsureDefaultChannelSelection();
+        _vm.AvailableLoops.CollectionChanged += (_, _) => EnsureDefaultLoopSelection();
         DataContext = _vm;
     }
 
@@ -34,71 +39,90 @@ public partial class MainWindow : Window
     private void ChannelList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is not ListBox lb) return;
-        _vm.SelectedChannels.Clear();
-        foreach (var item in lb.SelectedItems)
-            if (item is int ch) _vm.SelectedChannels.Add(ch);
+        _vm.SetSelectedChannels(lb.SelectedItems.OfType<int>());
+    }
+
+    private void AllChannels_Click(object sender, RoutedEventArgs e) => SelectAllChannels();
+
+    private void MultiChannel_Checked(object sender, RoutedEventArgs e)
+    {
+        SelectAllChannels();
+        EnsureDefaultLoopSelection(force: true);
+    }
+
+    private void AllLoops_Click(object sender, RoutedEventArgs e) => SelectAllLoops();
+
+    private void MultiLoop_Checked(object sender, RoutedEventArgs e)
+    {
+        SelectAllLoops();
+        EnsureDefaultChannelSelection(force: true);
+    }
+
+    private void SelectAllChannels()
+    {
+        ChannelList.UnselectAll();
+        if (DataContext is MainViewModel viewModel)
+            viewModel.SetSelectedChannels(Array.Empty<int>());
+    }
+
+    private void EnsureDefaultLoopSelection(bool force = false)
+    {
+        if (DataContext is not MainViewModel viewModel ||
+            (!force && !viewModel.CompareMultiChannel) ||
+            LoopList.SelectedItems.Count > 0 ||
+            viewModel.AvailableLoops.Count == 0)
+            return;
+
+        LoopList.SelectedItem = viewModel.AvailableLoops[0];
+    }
+
+    private void SelectAllLoops()
+    {
+        LoopList.UnselectAll();
+        if (DataContext is MainViewModel viewModel)
+            viewModel.SetSelectedLoops(Array.Empty<int>());
+    }
+
+    private void EnsureDefaultChannelSelection(bool force = false)
+    {
+        if (DataContext is not MainViewModel viewModel ||
+            (!force && !viewModel.CompareMultiLoop) ||
+            ChannelList.SelectedItems.Count > 0 ||
+            viewModel.AvailableChannels.Count == 0)
+            return;
+
+        ChannelList.SelectedItem = viewModel.AvailableChannels[0];
     }
 
     private void LoopList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is not ListBox lb) return;
-        _vm.SelectedLoops.Clear();
-        foreach (var item in lb.SelectedItems)
-            if (item is int loop) _vm.SelectedLoops.Add(loop);
+        _vm.SetSelectedLoops(lb.SelectedItems.OfType<int>());
     }
 
     private void MainChart_MouseMove(object sender, MouseEventArgs e)
     {
         try
         {
-            if (_vm.CurrentChartData.Count == 0)
-            {
-                TooltipPanel.Visibility = Visibility.Collapsed;
-                return;
-            }
-
-            var pos = e.GetPosition(MainChart);
-            var w = MainChart.ActualWidth;
-            var h = MainChart.ActualHeight;
-            if (w <= 0 || h <= 0) return;
-
-            // Estimate plot area bounds
-            double plotLeft = 65, plotTop = 10;
-            double plotRight = w - 20, plotBottom = h - 40;
-            double plotW = plotRight - plotLeft;
-            double plotH = plotBottom - plotTop;
-            if (plotW <= 0 || plotH <= 0) return;
-
-            // Check if mouse is within plot area
-            if (pos.X < plotLeft || pos.X > plotRight || pos.Y < plotTop || pos.Y > plotBottom)
+            if (e.LeftButton == MouseButtonState.Pressed || e.RightButton == MouseButtonState.Pressed)
             {
                 TooltipPanel.Visibility = Visibility.Collapsed;
                 _vm.TooltipVisible = false;
                 return;
             }
 
-            // Get axis ranges from data
-            var allExpect = _vm.CurrentChartData.Select(d => d.ExpectValue);
-            var allDiff = _vm.CurrentChartData.Select(d => d.Difference);
-            double xMin = allExpect.Min(), xMax = allExpect.Max();
-            double yMin = allDiff.Min(), yMax = allDiff.Max();
-            double xPad = (xMax - xMin) * 0.05;
-            double yPad = (yMax - yMin) * 0.05;
-            if (xPad == 0) xPad = 0.5;
-            if (yPad == 0) yPad = 0.001;
-            xMin -= xPad; xMax += xPad;
-            yMin -= yPad; yMax += yPad;
+            if (_vm.CurrentChartData.Count == 0)
+            {
+                TooltipPanel.Visibility = Visibility.Collapsed;
+                return;
+            }
 
-            double xRange = xMax - xMin;
-            double yRange = yMax - yMin;
-
-            // Convert mouse position to data coordinates
-            double dataX = xMin + ((pos.X - plotLeft) / plotW) * xRange;
-            double dataY = yMax - ((pos.Y - plotTop) / plotH) * yRange;
-
-            // Normalize to pixel distance for fair comparison
-            double xScale = plotW / xRange;
-            double yScale = plotH / yRange;
+            if (!TryGetChartPointerData(e, out var pos, out var dataX, out var dataY, out var xScale, out var yScale))
+            {
+                TooltipPanel.Visibility = Visibility.Collapsed;
+                _vm.TooltipVisible = false;
+                return;
+            }
 
             // Find closest non-limit data point
             TooltipDataPoint? nearest = null;
@@ -106,7 +130,7 @@ public partial class MainWindow : Window
 
             foreach (var dp in _vm.CurrentChartData)
             {
-                if (dp.IsLimit) continue;
+                if (dp.IsLimit || !_vm.IsChartSeriesVisible(dp.SeriesName)) continue;
                 double dx = (dp.ExpectValue - dataX) * xScale;
                 double dy = (dp.Difference - dataY) * yScale;
                 double dist = Math.Sqrt(dx * dx + dy * dy);
@@ -138,6 +162,7 @@ public partial class MainWindow : Window
             // Position tooltip near cursor using Margin
             double ttX = pos.X + 16;
             double ttY = pos.Y - 12;
+            var w = MainChart.ActualWidth;
             if (ttX + 180 > w) ttX = pos.X - 180;
             if (ttY < 0) ttY = pos.Y + 16;
             TooltipPanel.Margin = new Thickness(ttX, ttY, 0, 0);
@@ -151,54 +176,40 @@ public partial class MainWindow : Window
 
     private void MainChart_MouseLeave(object sender, MouseEventArgs e)
     {
+        _chartLeftButtonDownPosition = null;
         TooltipPanel.Visibility = Visibility.Collapsed;
         _vm.TooltipVisible = false;
     }
 
-    private void MainChart_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void MainChart_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>
+        _chartLeftButtonDownPosition = e.GetPosition(MainChart);
+
+    private void MainChart_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         try
         {
-            if (_vm.CurrentChartData.Count == 0) return;
+            var downPosition = _chartLeftButtonDownPosition;
+            _chartLeftButtonDownPosition = null;
+            if (!downPosition.HasValue) return;
 
-            var pos = e.GetPosition(MainChart);
-            var w = MainChart.ActualWidth;
-            var h = MainChart.ActualHeight;
-            if (w <= 0 || h <= 0) return;
-
-            double plotLeft = 65, plotTop = 10;
-            double plotRight = w - 20, plotBottom = h - 40;
-            double plotW = plotRight - plotLeft;
-            double plotH = plotBottom - plotTop;
-            if (plotW <= 0 || plotH <= 0) return;
-
-            if (pos.X < plotLeft || pos.X > plotRight || pos.Y < plotTop || pos.Y > plotBottom)
+            var upPosition = e.GetPosition(MainChart);
+            if (Math.Abs(upPosition.X - downPosition.Value.X) >= SystemParameters.MinimumHorizontalDragDistance ||
+                Math.Abs(upPosition.Y - downPosition.Value.Y) >= SystemParameters.MinimumVerticalDragDistance)
                 return;
 
-            var allExpect = _vm.CurrentChartData.Select(d => d.ExpectValue);
-            var allDiff = _vm.CurrentChartData.Select(d => d.Difference);
-            double xMin = allExpect.Min(), xMax = allExpect.Max();
-            double yMin = allDiff.Min(), yMax = allDiff.Max();
-            double xPad = (xMax - xMin) * 0.05;
-            double yPad = (yMax - yMin) * 0.05;
-            if (xPad == 0) xPad = 0.5;
-            if (yPad == 0) yPad = 0.001;
-            xMin -= xPad; xMax += xPad;
-            yMin -= yPad; yMax += yPad;
+            if (_vm.CurrentChartData.Count == 0) return;
 
-            double xRange = xMax - xMin;
-            double yRange = yMax - yMin;
-            double xScale = plotW / xRange;
-            double yScale = plotH / yRange;
+            if (!TryGetChartPointerData(e, out _, out var dataX, out var dataY, out var xScale, out var yScale))
+                return;
 
             TooltipDataPoint? nearest = null;
             double nearestDist = double.MaxValue;
 
             foreach (var dp in _vm.CurrentChartData)
             {
-                if (dp.IsLimit) continue;
-                double dx = (dp.ExpectValue - (xMin + ((pos.X - plotLeft) / plotW) * xRange)) * xScale;
-                double dy = (dp.Difference - (yMax - ((pos.Y - plotTop) / plotH) * yRange)) * yScale;
+                if (dp.IsLimit || !_vm.IsChartSeriesVisible(dp.SeriesName)) continue;
+                double dx = (dp.ExpectValue - dataX) * xScale;
+                double dy = (dp.Difference - dataY) * yScale;
                 double dist = Math.Sqrt(dx * dx + dy * dy);
                 if (dist < nearestDist)
                 {
@@ -216,8 +227,8 @@ public partial class MainWindow : Window
                 var row = _vm.ChartDataRows[nearest.RowIndex];
                 _vm.SelectedChartRow = row;
                 // Switch to Data tab
-                if (MainTabControl.Items.Count > 2)
-                    MainTabControl.SelectedIndex = 2;
+                if (MainTabControl.Items.Count > 3)
+                    MainTabControl.SelectedIndex = 3;
                 // Scroll to the selected row
                 ChartDataGrid.UpdateLayout();
                 ChartDataGrid.ScrollIntoView(row);
@@ -229,13 +240,158 @@ public partial class MainWindow : Window
         }
     }
 
+    private bool TryGetChartPointerData(
+        MouseEventArgs e,
+        out Point position,
+        out double dataX,
+        out double dataY,
+        out double xScale,
+        out double yScale)
+    {
+        position = e.GetPosition(MainChart);
+        dataX = dataY = xScale = yScale = 0;
+
+        var width = MainChart.ActualWidth;
+        var height = MainChart.ActualHeight;
+        if (width <= 0 || height <= 0 || _vm.CurrentChartData.Count == 0) return false;
+
+        const double plotLeft = 65;
+        const double plotTop = 10;
+        var plotRight = width - 20;
+        var plotBottom = height - 40;
+        var plotWidth = plotRight - plotLeft;
+        var plotHeight = plotBottom - plotTop;
+        if (plotWidth <= 0 || plotHeight <= 0) return false;
+
+        if (position.X < plotLeft || position.X > plotRight ||
+            position.Y < plotTop || position.Y > plotBottom)
+            return false;
+
+        var xMin = _vm.CurrentChartData.Min(d => d.ExpectValue);
+        var xMax = _vm.CurrentChartData.Max(d => d.ExpectValue);
+        var yMin = _vm.CurrentChartData.Min(d => d.Difference);
+        var yMax = _vm.CurrentChartData.Max(d => d.Difference);
+        var xPadding = (xMax - xMin) * 0.05;
+        var yPadding = (yMax - yMin) * 0.05;
+        if (xPadding == 0) xPadding = 0.5;
+        if (yPadding == 0) yPadding = 0.001;
+        xMin -= xPadding;
+        xMax += xPadding;
+        yMin -= yPadding;
+        yMax += yPadding;
+
+        var xAxis = _vm.XAxes.FirstOrDefault();
+        var yAxis = _vm.YAxes.FirstOrDefault();
+        xMin = xAxis?.MinLimit ?? xMin;
+        xMax = xAxis?.MaxLimit ?? xMax;
+        yMin = yAxis?.MinLimit ?? yMin;
+        yMax = yAxis?.MaxLimit ?? yMax;
+
+        var xRange = xMax - xMin;
+        var yRange = yMax - yMin;
+        if (xRange <= 0 || yRange <= 0) return false;
+
+        dataX = xMin + ((position.X - plotLeft) / plotWidth) * xRange;
+        dataY = yMax - ((position.Y - plotTop) / plotHeight) * yRange;
+        xScale = plotWidth / xRange;
+        yScale = plotHeight / yRange;
+        return true;
+    }
+
     private readonly Dictionary<int, Window> _floatingWindows = new();
-    private static readonly string[] TabNames = { "Chart", "Pass/Fail Matrix", "Data", "Statistics", "Errors / FATAL", "Device Info" };
+    private static readonly string[] TabNames = { "Chart", "Diagnostics", "Pass/Fail Matrix", "Data", "Statistics", "Errors / FATAL", "Device Info" };
+    private string? _expandedDiagnosticPanel;
+
+    private void DiagnosticExpand_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not string panelKey) return;
+
+        if (_expandedDiagnosticPanel == panelKey)
+        {
+            RestoreDiagnosticPanels();
+            return;
+        }
+
+        RestoreDiagnosticPanels();
+
+        var target = panelKey switch
+        {
+            "Tolerance" => ToleranceHeatmapPanel,
+            "Coefficient" => CoefficientDistributionPanel,
+            "Residual" => ResidualSignaturePanel,
+            "Symmetry" => SymmetryPanel,
+            _ => null
+        };
+        if (target == null) return;
+
+        foreach (var panel in GetDiagnosticPanels())
+            panel.Visibility = ReferenceEquals(panel, target) ? Visibility.Visible : Visibility.Collapsed;
+
+        DiagnosticsVerticalSplitter.Visibility = Visibility.Collapsed;
+        DiagnosticsHorizontalSplitter.Visibility = Visibility.Collapsed;
+        Grid.SetRow(target, 0);
+        Grid.SetColumn(target, 0);
+        Grid.SetRowSpan(target, 3);
+        Grid.SetColumnSpan(target, 3);
+
+        _expandedDiagnosticPanel = panelKey;
+        SetDiagnosticExpandButton(button, isExpanded: true);
+    }
+
+    private void RestoreDiagnosticPanels()
+    {
+        var layouts = new[]
+        {
+            (Panel: ToleranceHeatmapPanel, Row: 0, Column: 0),
+            (Panel: CoefficientDistributionPanel, Row: 0, Column: 2),
+            (Panel: ResidualSignaturePanel, Row: 2, Column: 0),
+            (Panel: SymmetryPanel, Row: 2, Column: 2)
+        };
+
+        foreach (var layout in layouts)
+        {
+            layout.Panel.Visibility = Visibility.Visible;
+            Grid.SetRow(layout.Panel, layout.Row);
+            Grid.SetColumn(layout.Panel, layout.Column);
+            Grid.SetRowSpan(layout.Panel, 1);
+            Grid.SetColumnSpan(layout.Panel, 1);
+        }
+
+        DiagnosticsVerticalSplitter.Visibility = Visibility.Visible;
+        DiagnosticsHorizontalSplitter.Visibility = Visibility.Visible;
+        foreach (var button in GetDiagnosticExpandButtons())
+            SetDiagnosticExpandButton(button, isExpanded: false);
+        _expandedDiagnosticPanel = null;
+    }
+
+    private GroupBox[] GetDiagnosticPanels() =>
+    [
+        ToleranceHeatmapPanel,
+        CoefficientDistributionPanel,
+        ResidualSignaturePanel,
+        SymmetryPanel
+    ];
+
+    private Button[] GetDiagnosticExpandButtons() =>
+    [
+        ToleranceHeatmapExpandButton,
+        CoefficientDistributionExpandButton,
+        ResidualSignatureExpandButton,
+        SymmetryExpandButton
+    ];
+
+    private static void SetDiagnosticExpandButton(Button button, bool isExpanded)
+    {
+        if (button.Content is TextBlock icon)
+            icon.Text = isExpanded ? "\uE73F" : "\uE740";
+        button.ToolTip = isExpanded ? "Restore chart layout" : "Maximize chart";
+    }
 
     private void DetachTab_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button btn || btn.Tag is not string tagStr) return;
-        if (!int.TryParse(tagStr, out int tabIndex)) return;
+        if (sender is not Button btn) return;
+        if (ItemsControl.ContainerFromElement(MainTabControl, btn) is not TabItem tabItem) return;
+        var tabIndex = MainTabControl.Items.IndexOf(tabItem);
         if (tabIndex < 0 || tabIndex >= MainTabControl.Items.Count) return;
 
         // If already floating, focus the existing window
@@ -244,9 +400,6 @@ public partial class MainWindow : Window
             existing.Focus();
             return;
         }
-
-        var tabItem = MainTabControl.Items[tabIndex] as TabItem;
-        if (tabItem == null) return;
 
         var originalContent = tabItem.Content;
         var tabName = TabNames[tabIndex];
