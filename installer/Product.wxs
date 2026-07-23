@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="SST Log Analyser"
+      Manufacturer="SST Tools"
+      Version="$(AppVersion)"
+      UpgradeCode="CE2D68DA-475B-4A85-BB03-6C26B47A24D5"
+      Scope="perUser"
+      InstallerVersion="500"
+      Compressed="yes">
+
+    <SummaryInformation Description="Calibration LOG analysis and debugging tool" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of SST Log Analyser is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="AppIcon.ico" SourceFile="$(ProjectRoot)\Assets\AppIcon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="LocalProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="SST Log Analyser" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="SST Log Analyser" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Component Id="StartMenuShortcut" Directory="ApplicationProgramsFolder"
+               Guid="E911DB3E-6F8C-4C22-87AC-FB3A8CE986F1">
+      <Shortcut Id="StartMenuShortcutLink"
+                Name="SST Log Analyser"
+                Description="Analyse and debug calibration LOG files"
+                Target="[INSTALLFOLDER]SSTLogAnalyser.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="AppIcon.ico" />
+      <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\SST Tools\SST Log Analyser"
+                     Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Component Id="DesktopShortcut" Directory="DesktopFolder"
+               Guid="C4138A2B-0A08-4B5B-A397-13B0FB7300DA">
+      <Shortcut Id="DesktopShortcutLink"
+                Name="SST Log Analyser"
+                Description="Analyse and debug calibration LOG files"
+                Target="[INSTALLFOLDER]SSTLogAnalyser.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="AppIcon.ico" />
+      <RegistryValue Root="HKCU" Key="Software\SST Tools\SST Log Analyser"
+                     Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Feature Id="MainFeature" Title="SST Log Analyser" Level="1">
+      <Files Include="$(PublishDir)\**">
+        <Exclude Files="$(PublishDir)\*.pdb" />
+      </Files>
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+  </Package>
+</Wix>
