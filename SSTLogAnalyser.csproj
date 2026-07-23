@@ -15,6 +15,7 @@
   <ItemGroup>
     <Resource Include="Assets\AppIcon.ico" />
     <None Update="RELEASE_NOTES_v1.2.md" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="USER_MANUAL.md" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
