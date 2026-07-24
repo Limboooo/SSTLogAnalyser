@@ -14,8 +14,11 @@ public class LogParser
     private static readonly Regex CoefficientRegex = new(@"^(\w+)\s+(.+?)\s+Gain:\s*([\d.\-Ee+]+),\s*Offset:\s*([\d.\-Ee+]+)", RegexOptions.Compiled);
     private static readonly Regex MixiCoefficientRegex = new(@"^(?:-+[^-]+-+\s+)?M/C\s+M\s*[:=]\s*([\d.\-Ee+]+)\s*[,;]?\s*C\s*[:=]\s*([\d.\-Ee+]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex MixiCoefficientSummaryRegex = new(@"^\w+\s+(AWG|DTZ)\s*(\d+)\s*,\s*([^,]+)\s*,\s*M\s*[:=]\s*([\d.\-Ee+]+)\s*,\s*C\s*[:=]\s*([\d.\-Ee+]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex PeVerificationRegex = new(@"^Pin:\s*(\d+)\s+the\s+(.+)\s+Verification:\s*(Pass|Fail)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex PeVerificationRegex = new(@"^Pin:\s*(\d+)\s+the\s+(.+?)\s+Verification(?:\s+\([^)]+\))?:\s*(Pass|Fail)\.?\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex PeTestHeaderRegex = new(@"^(Re-test\s+)?(?:(?:PE\s+)?(\w+))\s+Verification\s*$", RegexOptions.Compiled);
+    private static readonly Regex PpmuVerificationHeaderRegex = new(@"^(Re-test\s+)?PPMU\s+(.+?)\s+Verification\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex PpmuCalibrationHeaderRegex = new(@"^PPMU\s+(.+?)\s+Calibration\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex PpmuCoefficientRegex = new(@"^PE\s+Pin:\s*(\d+)\s+PPMU\s+(.+?)\s+Calibration(?:\s+(.+?))?\s+Gain:\s*([\d.\-Ee+]+),\s*Offset:\s*([\d.\-Ee+]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex DeviceGroupRegex = new(@"^Group\s+(\d+):\s*Location\s+(\d+)\((\d+)\)->\s*Slot\s+(.+?):\s*(.+?)\((\d+)\)", RegexOptions.Compiled);
     private static readonly Regex ToolVersionRegex = new(@"Version:\s*([\d.]+)", RegexOptions.Compiled);
     private static readonly Regex DmmTempRegex = new(@"DMM\s+Temp(?:er)?ature:([\d.]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -50,6 +53,7 @@ public class LogParser
         string? mixiTestItem = null;
         int mixiChannel = 0;
         string? currentCalibrationItem = null;
+        string? currentPpmuTestHeader = null;
 
         using var reader = new StreamReader(filePath);
         int lineNumber = 0;
@@ -120,6 +124,38 @@ public class LogParser
                 continue;
             }
 
+            var ppmuCalibrationMatch = PpmuCalibrationHeaderRegex.Match(message);
+            if (ppmuCalibrationMatch.Success)
+            {
+                currentModule = ModuleType.PPMU;
+                currentCalibrationItem = ppmuCalibrationMatch.Groups[1].Value.Trim();
+                currentPpmuTestHeader = null;
+                inDataBlock = false;
+                columnNames = null;
+                continue;
+            }
+
+            var ppmuCoefficientMatch = PpmuCoefficientRegex.Match(message);
+            if (ppmuCoefficientMatch.Success)
+            {
+                var calibrationItem = ppmuCoefficientMatch.Groups[2].Value.Trim();
+                var coefficientName = ppmuCoefficientMatch.Groups[3].Success
+                    ? ppmuCoefficientMatch.Groups[3].Value.Trim()
+                    : calibrationItem;
+                AddOrUpdateCalibrationCoefficient(result, new CalibrationCoefficient
+                {
+                    LoopIndex = currentLoop,
+                    ModuleType = ModuleType.PPMU,
+                    ChannelId = int.Parse(ppmuCoefficientMatch.Groups[1].Value),
+                    CalibrationItem = calibrationItem,
+                    CoefficientName = NormalizeCoefficientName(coefficientName),
+                    Gain = ParseDouble(ppmuCoefficientMatch.Groups[4].Value),
+                    Offset = ParseDouble(ppmuCoefficientMatch.Groups[5].Value),
+                    LineNumber = lineNumber
+                });
+                continue;
+            }
+
             var coefficientMatch = CoefficientRegex.Match(message);
             if (coefficientMatch.Success && currentCalibrationItem != null)
             {
@@ -159,12 +195,26 @@ public class LogParser
                 continue;
             }
 
+            var ppmuVerificationMatch = PpmuVerificationHeaderRegex.Match(message);
+            if (ppmuVerificationMatch.Success)
+            {
+                isReTest = ppmuVerificationMatch.Groups[1].Success && ppmuVerificationMatch.Groups[1].Value.Trim().Length > 0;
+                currentModule = ModuleType.PPMU;
+                currentPpmuTestHeader = ppmuVerificationMatch.Groups[2].Value.Trim();
+                currentTestHeader = currentPpmuTestHeader;
+                currentCalibrationItem = null;
+                columnNames = null;
+                inDataBlock = true;
+                continue;
+            }
+
             var peMatch = PeTestHeaderRegex.Match(message);
             if (peMatch.Success)
             {
                 isReTest = peMatch.Groups[1].Success && peMatch.Groups[1].Value.Trim().Length > 0;
                 currentModule = ModuleType.PE;
                 currentTestHeader = peMatch.Groups[2].Value.Trim();
+                currentPpmuTestHeader = null;
                 columnNames = null;
                 inDataBlock = true;
                 continue;
@@ -256,6 +306,8 @@ public class LogParser
             {
                 var newCols = ParseCsvFields(message);
                 columnNames = newCols;
+                if (currentModule == ModuleType.PPMU && currentPpmuTestHeader != null)
+                    currentTestHeader = FormatPpmuTestItem(currentPpmuTestHeader, newCols.FirstOrDefault());
                 if (currentTestHeader != null
                     && currentTestHeader.Contains("Force Voltage", StringComparison.OrdinalIgnoreCase)
                     && newCols.Any(c => c.Contains("AdcMeasure", StringComparison.OrdinalIgnoreCase)))
@@ -350,6 +402,7 @@ public class LogParser
         {
             "DPS" => ModuleType.DPS,
             "PMU" => ModuleType.PMU,
+            "PPMU" => ModuleType.PPMU,
             "PE" => ModuleType.PE,
             "DPSI" => ModuleType.DPSI,
             "AWG" => ModuleType.AWG,
@@ -366,6 +419,23 @@ public class LogParser
         if (!string.IsNullOrEmpty(range))
             return range + ", " + test;
         return test;
+    }
+
+    private static string FormatPpmuTestItem(string section, string? pinColumn)
+    {
+        var modeMatch = Regex.Match(pinColumn ?? string.Empty, @"\(([^)]+)\)");
+        if (!modeMatch.Success) return section;
+
+        var mode = modeMatch.Groups[1].Value.Trim().ToUpperInvariant();
+        var operation = mode switch
+        {
+            "FV" => "Force Voltage",
+            "MV" => "Measure Voltage",
+            "FI" => "Force Current",
+            "MI" => "Measure Current",
+            _ => mode
+        };
+        return section + ", " + operation;
     }
 
     private static string NormalizeCoefficientName(string name) =>
@@ -414,7 +484,7 @@ public class LogParser
             double expect, measure, lowLimit, upLimit, difference;
             int actualChannel = channelId;
 
-            bool hasPin = columnNames.Length > 0 && columnNames[0].Equals("Pin", StringComparison.OrdinalIgnoreCase);
+            bool hasPin = columnNames.Length > 0 && columnNames[0].StartsWith("Pin", StringComparison.OrdinalIgnoreCase);
 
             // Find ADC measure column position in headers (-1 if not present)
             int adcCol = -1;

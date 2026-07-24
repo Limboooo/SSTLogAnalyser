@@ -145,9 +145,20 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
-                            <Button Content="ALL" Width="44" Height="22" Margin="2,2,2,4"
-                                    HorizontalAlignment="Left" Padding="0"
-                                    Click="AllChannels_Click" ToolTip="Show all channels"/>
+                            <StackPanel Orientation="Horizontal" Margin="2,2,2,4">
+                                <Button Content="ALL" Width="44" Height="22" Margin="0" Padding="0"
+                                        Click="AllChannels_Click" ToolTip="Show all channels"/>
+                                <Button Width="24" Height="22" Margin="4,0,0,0" Padding="0"
+                                        Click="PreviousChannelPage_Click" ToolTip="Select previous 128 channels">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE76B;" FontSize="11"/>
+                                </Button>
+                                <Button Width="24" Height="22" Margin="2,0,0,0" Padding="0"
+                                        Click="NextChannelPage_Click" ToolTip="Select next 128 channels">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE76C;" FontSize="11"/>
+                                </Button>
+                                <TextBlock x:Name="ChannelPageText" Text="0 / 0" Margin="6,0,0,0"
+                                           VerticalAlignment="Center" FontSize="10" Foreground="#555"/>
+                            </StackPanel>
                             <ListBox x:Name="ChannelList" Grid.Row="1"
                                      ItemsSource="{Binding AvailableChannels}"
                                      SelectionMode="Extended" MaxHeight="150"
@@ -181,14 +192,17 @@
                         </StackPanel>
                     </GroupBox>
                     <GroupBox Header="Rendering">
-                        <CheckBox Content="Performance Mode (fast, no lines)" IsChecked="{Binding PerformanceMode}" Margin="0,2"/>
+                        <CheckBox Content="Performance Mode (fast, no points)"
+                                  IsChecked="{Binding PerformanceMode}" Margin="0,2"
+                                  ToolTip="Reduce point markers for large selections"/>
                     </GroupBox>
                 </StackPanel>
             </ScrollViewer>
 
             <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="#CCC"/>
 
-            <TabControl x:Name="MainTabControl" Grid.Column="2" Margin="4">
+            <TabControl x:Name="MainTabControl" Grid.Column="2" Margin="4"
+                        SelectionChanged="MainTabControl_SelectionChanged">
                 <TabItem>
                     <TabItem.Header>
                         <StackPanel Orientation="Horizontal">
@@ -206,6 +220,7 @@
                             Series="{Binding Series}"
                             XAxes="{Binding XAxes}"
                             YAxes="{Binding YAxes}"
+                            AnimationsSpeed="{Binding ChartAnimationsSpeed}"
                             ZoomMode="Both"
                             ZoomingSpeed="0.15"
                             Background="White"
@@ -213,6 +228,14 @@
                             LegendPosition="Hidden"
                             MouseMove="MainChart_MouseMove"
                             MouseLeave="MainChart_MouseLeave"/>
+                        <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="72,8,0,0"
+                                Padding="6,3" MaxWidth="520" Panel.ZIndex="4"
+                                Background="#B0FFFFFF" BorderBrush="#DDD" BorderThickness="1" CornerRadius="3"
+                                IsHitTestVisible="False"
+                                Visibility="{Binding ChartRenderSummary, Converter={StaticResource StringToVis}}">
+                            <TextBlock Text="{Binding ChartRenderSummary}" FontSize="10" Foreground="#555"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </Border>
                         <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8" Panel.ZIndex="5">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                 <Button Content="Show all" Width="56" Height="22" FontSize="10" Margin="0,0,4,0"
@@ -233,14 +256,30 @@
                                     MaxWidth="280"
                                     Background="#B0FFFFFF" BorderBrush="#DDD" BorderThickness="1"
                                     Visibility="{Binding ShowLegend, Converter={StaticResource BoolToVis}}">
-                                <ScrollViewer MaxHeight="360"
-                                              VerticalScrollBarVisibility="Auto"
-                                              HorizontalScrollBarVisibility="Disabled">
-                                    <ScrollViewer.Resources>
+                                <ListBox ItemsSource="{Binding LegendItems}" MaxHeight="360"
+                                         BorderThickness="0" Background="Transparent" Padding="0"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         VirtualizingPanel.IsVirtualizing="True"
+                                         VirtualizingPanel.VirtualizationMode="Recycling"
+                                         VirtualizingPanel.ScrollUnit="Pixel">
+                                    <ListBox.Resources>
                                         <Style TargetType="ScrollBar" BasedOn="{StaticResource LegendScrollBarStyle}"/>
-                                    </ScrollViewer.Resources>
-                                    <ItemsControl ItemsSource="{Binding LegendItems}">
-                                        <ItemsControl.ItemTemplate>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="Margin" Value="0"/>
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                            <Setter Property="Focusable" Value="False"/>
+                                        </Style>
+                                    </ListBox.Resources>
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <VirtualizingStackPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
                                             <DataTemplate>
                                                 <Button Background="Transparent" BorderThickness="0" Padding="2,1"
                                                         HorizontalContentAlignment="Left" Cursor="Hand"
@@ -256,9 +295,8 @@
                                                     </StackPanel>
                                                 </Button>
                                             </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </ScrollViewer>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
                             </Border>
                         </StackPanel>
                         <Border x:Name="TooltipPanel"
@@ -567,7 +605,7 @@
                         <GroupBox x:Name="SymmetryPanel" Grid.Row="2" Grid.Column="2" Margin="2">
                             <GroupBox.Header>
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="MIXI / AWG POS-NEG Symmetry" VerticalAlignment="Center"/>
+                                    <TextBlock Text="MIXI / AWG POS-NEG Symmetry Mismatch" VerticalAlignment="Center"/>
                                     <Button x:Name="SymmetryExpandButton" Width="22" Height="18" Padding="0" Margin="6,0,0,0"
                                             Background="Transparent" BorderThickness="0" Cursor="Hand"
                                             ToolTip="Maximize chart" Click="DiagnosticExpand_Click" Tag="Symmetry">

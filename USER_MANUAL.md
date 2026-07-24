@@ -44,11 +44,11 @@ SST Log Analyser 是一款用于解析和可视化半导体测试日志文件的
 
 ### 安装（推荐）
 
-1. 从 GitHub Releases 下载 `SSTLogAnalyser-v1.2.0-win-x64.msi` 和对应的 `.sha256` 文件。
-2. 双击 MSI，按安装向导完成安装。安装过程不需要管理员权限。
+1. 从 GitHub Releases 下载 `SSTLogAnalyser-v1.2.1-win-x64.msi` 和对应的 `.sha256` 文件。
+2. 双击 MSI，在 **Destination Folder** 页面保留默认目录或点击 **Browse** 选择其他安装路径，然后完成安装。
 3. 从桌面快捷方式或开始菜单启动 **SST Log Analyser**。
 
-程序安装到当前用户目录：`%LOCALAPPDATA%\Programs\SST Log Analyser`。安装包已经包含 .NET 9 Windows Desktop Runtime，即使电脑没有安装 .NET 也能直接运行。
+默认安装目录是 `%LOCALAPPDATA%\Programs\SST Log Analyser`，使用该位置不需要管理员权限。也可以选择其他当前账号有写权限的目录；请勿选择 `Program Files` 等受保护位置，否则安装可能因权限不足而失败。安装包已经包含 .NET 9 Windows Desktop Runtime，即使电脑没有安装 .NET 也能直接运行。
 
 > 当前安装包未进行商业代码签名。如果 Windows SmartScreen 弹出提示，请确认文件来自本项目的官方 GitHub Release，并使用 `.sha256` 文件核对哈希后再选择运行。
 
@@ -189,16 +189,21 @@ Loop Index（循环序号）
 选择要查看的模块类型。不同模块的测试数据独立存储。
 
 **常见模块类型：**
-- `ADC` — 模数转换器校准
-- `DAC` — 数模转换器校准
-- `TMU` — 时间测量单元
-- `DMM` — 数字万用表
+- `DPS` — Device Power Supply
+- `PMU` — Parametric Measurement Unit
+- `PPMU` — Per-Pin PMU，支持 FV/MV、FI/MI、VCH、VCL
+- `PE` — Pin Electronics
+- `DPSI` — DPS Interface
+- `MIXI` — AWG/DTZ 混合信号校准
 
 #### Channels / Pins（通道号）
 
 选择具体的通道。支持多选（按住 Ctrl 或 Shift）。
 
-**提示：** 点击 **ALL** 会清除列表选择，并显示所有通道。切换通道时，如果原 Test Item 在新选择中仍然有效，程序会保留该 Test Item，无需重复选择。
+**提示：**
+- 点击 **ALL** 会清除列表选择，并显示所有通道。
+- 通道数量较多时，使用 ALL 右侧的上一页/下一页按钮可一次选择 128 个 Channel；旁边会显示当前范围和总数，例如 `129-256 / 2048`。
+- 切换通道时，如果原 Test Item 在新选择中仍然有效，程序会保留该 Test Item，无需重复选择。
 
 #### Test Item（测试项目）
 
@@ -225,6 +230,14 @@ Loop Index（循环序号）
 - 切换到 **Multi-Channel** 时，Channel 自动设为 ALL，并默认选择第一个 Loop，避免多个 Loop 意外叠加。
 - 切换到 **Multi-Loop** 时，Loop 自动设为 ALL，并默认选择第一个 Channel，避免多个 Channel 意外叠加。
 - Channel 和 Loop 同时为 ALL 时，每个 `Channel / Loop` 组合保持为独立曲线，不会把同一 Channel 的多个 Loop 合并成一条线。
+
+#### Rendering（渲染）
+
+- 默认显示原始 Channel/Loop 曲线、点标记和失败点。
+- 选择 **ALL** 时会绘制当前 Test Item 下全部 Channel/Loop 原始曲线，不再限制为 128 组。
+- 勾选 **Performance Mode** 后仍显示全部原始曲线，但关闭点标记、失败点叠加和动画，以提高大量曲线时的响应速度。
+- 超过 128 组曲线或 50,000 个点时会自动使用快速渲染，但不会省略 Channel；主图左上角会显示实际绘制的完整曲线数量。
+- 绘图数量限制不会删除数据，Data 标签和 Statistics 始终保留完整结果。
 
 ### 过滤器的联动关系
 
@@ -330,6 +343,8 @@ Chart 标签页是核心可视化界面，展示校准数据的 Expected vs Diff
 
 Diagnostics 位于 Chart 后面，使用当前 Module、Channel、Test Item 和 Loop 过滤条件生成四张校准诊断图。四张图都支持滚轮缩放；点击标题旁的放大按钮可单独占满诊断区域，再次点击即可恢复四宫格。点击 Diagnostics 标签旁的 **[+]** 可以把整个诊断页弹出为独立窗口。
 
+Diagnostics 只在标签页可见或处于独立浮窗时刷新。Residual 和 POS-NEG 图在数据量较大时只绘制风险最高的 20 组原始曲线；热力图由数据库直接计算每个 Channel/Test Item 的最坏结果，避免加载全部原始行。
+
 ### Tolerance Utilization Heatmap（容差利用率热力图）
 
 - 横轴是 Channel，纵轴是 Test Item，每个色块代表该组合在当前文件和 Loop 条件下的最差结果。
@@ -349,11 +364,12 @@ Diagnostics 位于 Chart 后面，使用当前 Module、Channel、Test Item 和 
 - 整体上下偏移通常对应 Offset 问题；随 Target 单调倾斜通常对应 Gain 问题；弯曲或周期形状可能提示非线性或量程相关问题；孤立尖峰更像单点异常。
 - 顶部摘要提供 RMS、最大绝对残差及其 Channel、最差容差利用率。比较多条线时，先找明显偏离共同形状的 Channel 或 Loop。
 
-### MIXI / AWG POS-NEG Symmetry（正负路径对称性图）
+### MIXI / AWG POS-NEG Symmetry Mismatch（正负路径不对称量图）
 
 - 仅在选中包含 POS/NEG 标记的 MIXI/AWG 数据时显示。
-- 对比相同 Target 下 POS 与 NEG 的 `Meas - Target`；两条线越接近，正负路径越对称。
-- 摘要中的 `Mean mismatch` 和 `Max mismatch` 分别表示平均和最大正负路径差异，最大值适合快速定位最坏工作点。
+- 每个 Channel/Loop 只绘制一条派生曲线：`Mismatch = POS residual - NEG residual`，不再重复显示 Residual Signature 中的原始 POS/NEG 曲线。
+- 水平零线表示完全对称；曲线离零线越远，表示该 Target 下的正负路径差异越大，正负号表示偏差方向。
+- 摘要中的 `Mean |mismatch|` 和 `Max |mismatch|` 分别表示平均和最大绝对不对称量，并标出最坏 Channel 和 Target。
 
 ---
 
@@ -637,9 +653,7 @@ Remove-Item "$env:LOCALAPPDATA\SSTLogAnalyser\cache.db"
 
 ### Q7: 图表缩放后如何恢复默认视图？
 
-**方法：**
-- 双击图表任意位置
-- 或按键盘 `Esc` 键
+点击图表右上角的 **Reset** 按钮。
 
 ### Q8: 统计数据中的 StdDev 很大说明什么？
 
@@ -740,6 +754,20 @@ CREATE TABLE system_info (
 
 ## 版本历史
 
+### v1.2.1 (2026-07-24)
+
+**安装体验、对称性诊断与大数据稳定性**
+- [x] 安装向导增加 Destination Folder 页面，支持选择安装路径
+- [x] 默认仍使用当前用户目录，默认路径安装无需管理员权限
+- [x] POS-NEG 对称性图改为直接绘制 `POS residual - NEG residual`
+- [x] 增加零基准线，并在摘要中标出最大不对称量对应的 Channel 和 Target
+- [x] 恢复原始曲线与 Performance Mode 开关，ALL 绘制全部 Channel，大数据自动关闭点标记和动画
+- [x] Channel 增加每页 128 个的范围选择，适配 2048 Channel 场景
+- [x] 图例、Tooltip、Data、Statistics 改为虚拟化或批量更新，Diagnostics 改为按需刷新
+- [x] 热力图改为数据库聚合，Residual 与 POS-NEG 图增加大数据安全保护
+- [x] 增加 PPMU Verification 与 Gain/Offset 解析，支持 FV/MV、五档 FI/MI、VCH、VCL
+- [x] 升级解析缓存版本，已缓存 LOG 会在新版中自动重新解析
+
 ### v1.2 (2026-07-23)
 
 **诊断分析、图表交互与免运行时安装包**
@@ -786,6 +814,6 @@ CREATE TABLE system_info (
 
 ---
 
-**文档版本：** 1.2
-**最后更新：** 2026-07-23
+**文档版本：** 1.2.1
+**最后更新：** 2026-07-24
 **作者：** SST Log Analyser Team

@@ -33,6 +33,8 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _compareMultiLoop;
     [ObservableProperty] private bool _showLegend = true;
     [ObservableProperty] private bool _performanceMode;
+    [ObservableProperty] private string _chartRenderSummary = string.Empty;
+    [ObservableProperty] private TimeSpan _chartAnimationsSpeed = TimeSpan.FromMilliseconds(250);
     [ObservableProperty] private bool _tooltipVisible;
     [ObservableProperty] private string _tooltipTitle = string.Empty;
     [ObservableProperty] private string _tooltipExpect = string.Empty;
@@ -70,17 +72,35 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<ErrorLogEntry> ErrorEntries { get; } = new();
     public ObservableCollection<DeviceInfo> DeviceEntries { get; } = new();
     public ObservableCollection<SystemInfo> SystemInfos { get; } = new();
-    public ObservableCollection<StatEntry> Statistics { get; } = new();
+    [ObservableProperty] private IReadOnlyList<StatEntry> _statistics = Array.Empty<StatEntry>();
     public ObservableCollection<PassFailEntry> PassFailEntries { get; } = new();
-    public ObservableCollection<LegendItem> LegendItems { get; } = new();
+    [ObservableProperty] private IReadOnlyList<LegendItem> _legendItems = Array.Empty<LegendItem>();
     public ObservableCollection<string> AvailableCoefficientNames { get; } = new();
     public List<TooltipDataPoint> CurrentChartData { get; private set; } = new();
-    public ObservableCollection<TestResult> ChartDataRows { get; } = new();
+    [ObservableProperty] private IReadOnlyList<TestResult> _chartDataRows = Array.Empty<TestResult>();
     [ObservableProperty] private TestResult? _selectedChartRow;
     private readonly Dictionary<ISeries, string> _seriesFocusKeys = new();
     private readonly HashSet<string> _focusedSeriesNames = new(StringComparer.Ordinal);
+    private readonly Dictionary<TestResult, int> _chartRowIndices = new();
+    private readonly Dictionary<string, TooltipDataPoint[]> _tooltipSeriesIndex = new(StringComparer.Ordinal);
+    private (double XMin, double XMax, double YMin, double YMax)? _chartDataBounds;
+    private bool _diagnosticsActive;
     private bool _isUpdatingChannelSelection;
     private bool _isUpdatingLoopSelection;
+
+    private const int AutomaticFastSeriesThreshold = 128;
+    private const int AutomaticFastPointThreshold = 50_000;
+    private const int DiagnosticLargeSeriesThreshold = 256;
+    private const int DiagnosticLargePointThreshold = 100_000;
+    private const int DiagnosticDetailSeriesLimit = 64;
+    private const int DiagnosticWorstGroupCount = 20;
+
+    private sealed record ChartGroup(
+        long FileId,
+        int ChannelId,
+        int LoopIndex,
+        string Title,
+        List<TestResult> Points);
 
     private static readonly SKColor[] Palette = new[]
     {
@@ -90,10 +110,14 @@ public partial class MainViewModel : ObservableObject
         SKColor.Parse("#3F51B5"), SKColor.Parse("#8BC34A"), SKColor.Parse("#CDDC39"),
     };
 
-    public MainViewModel()
+    public MainViewModel() : this(new CacheService(), new LogParser())
     {
-        _cache = new CacheService();
-        _parser = new LogParser();
+    }
+
+    internal MainViewModel(CacheService cache, LogParser parser)
+    {
+        _cache = cache;
+        _parser = parser;
         SelectedChannels.CollectionChanged += (_, _) =>
         {
             if (_isUpdatingChannelSelection) return;
@@ -288,15 +312,13 @@ public partial class MainViewModel : ObservableObject
     {
         RefreshLoops();
         UpdateChart();
-        var fileIds = LoadedFiles.Select(f => f.FileId).ToArray();
-        if (fileIds.Length > 0)
-        {
-            UpdateResidualChart(fileIds);
-            UpdateSymmetryChart(fileIds);
-        }
+        UpdateDiagnostics();
         RefreshSecondaryViews();
     }
-    partial void OnSelectedCoefficientNameChanged(string? value) => UpdateCoefficientCharts();
+    partial void OnSelectedCoefficientNameChanged(string? value)
+    {
+        if (_diagnosticsActive) UpdateCoefficientCharts();
+    }
     partial void OnSearchTextChanged(string value) { RefreshTestItems(); UpdateChart(); UpdateDiagnostics(); }
     partial void OnCompareMultiChannelChanged(bool value) { if (value) CompareMultiLoop = false; UpdateChart(); }
     partial void OnCompareMultiLoopChanged(bool value) { if (value) CompareMultiChannel = false; UpdateChart(); }
@@ -371,7 +393,7 @@ public partial class MainViewModel : ObservableObject
         if (fileIds.Length == 0 || SelectedModule == null)
         {
             SelectedCoefficientName = null;
-            UpdateCoefficientCharts();
+            if (_diagnosticsActive) UpdateCoefficientCharts();
             return;
         }
 
@@ -382,7 +404,7 @@ public partial class MainViewModel : ObservableObject
             ? previous
             : AvailableCoefficientNames.FirstOrDefault();
         SelectedCoefficientName = next;
-        UpdateCoefficientCharts();
+        if (_diagnosticsActive) UpdateCoefficientCharts();
     }
 
     private void InitializeChart()
@@ -392,7 +414,7 @@ public partial class MainViewModel : ObservableObject
         XAxes = new[] { new Axis { Name = "Expected Value", NameTextSize = 13, TextSize = 11 } };
         YAxes = new[] { new Axis { Name = "Difference", NameTextSize = 13, TextSize = 11 } };
         Series = Array.Empty<ISeries>();
-        LegendItems.Clear();
+        LegendItems = Array.Empty<LegendItem>();
         CurrentChartData.Clear();
     }
 
@@ -410,7 +432,7 @@ public partial class MainViewModel : ObservableObject
         ResidualXAxes = new[] { new Axis { Name = "Expected / Target", NameTextSize = 10, TextSize = 9 } };
         ResidualYAxes = new[] { new Axis { Name = "Residual", NameTextSize = 10, TextSize = 9 } };
         SymmetryXAxes = new[] { new Axis { Name = "Target", TextSize = 10 } };
-        SymmetryYAxes = new[] { new Axis { Name = "Meas - Target", TextSize = 10 } };
+        SymmetryYAxes = new[] { new Axis { Name = "POS residual - NEG residual", TextSize = 10 } };
     }
 
     private void UpdateChart()
@@ -421,65 +443,101 @@ public partial class MainViewModel : ObservableObject
         _seriesFocusKeys.Clear();
         var fileIds = LoadedFiles.Select(f => f.FileId).ToArray();
         if (fileIds.Length == 0 || SelectedModule == null || SelectedTestItem == null)
-        { Series = Array.Empty<ISeries>(); LegendItems.Clear(); CurrentChartData.Clear(); ChartDataRows.Clear(); return; }
+        {
+            ClearChartDisplay();
+            return;
+        }
 
         var channels = SelectedChannels.Count > 0 ? SelectedChannels.ToArray() : null;
         var loops = SelectedLoops.Count > 0 ? SelectedLoops.ToArray() : null;
         var data = _cache.QueryTestResults(fileIds, SelectedModule, SelectedTestItem, channels, loops);
         if (data.Count == 0)
-        { Series = Array.Empty<ISeries>(); LegendItems.Clear(); CurrentChartData.Clear(); ChartDataRows.Clear(); return; }
+        {
+            ClearChartDisplay();
+            return;
+        }
 
-        var seriesList = new List<ISeries>();
-        LegendItems.Clear();
+        ChartDataRows = data;
+        _chartRowIndices.Clear();
+        for (var index = 0; index < data.Count; index++)
+            _chartRowIndices[data[index]] = index;
+
+        LegendItems = Array.Empty<LegendItem>();
         CurrentChartData.Clear();
-        ChartDataRows.Clear();
-        foreach (var r in data) ChartDataRows.Add(r);
-        int colorIdx = 0;
-        int groupIdx = 0;
         var multiFile = LoadedFiles.Count > 1;
         var fileNameMap = LoadedFiles.ToDictionary(f => f.FileId, f => Path.GetFileNameWithoutExtension(f.FileName));
         var hasMultipleLoops = data.Select(r => r.LoopIndex).Distinct().Take(2).Count() > 1;
+        var hasMultipleChannels = data.Select(r => r.ChannelId).Distinct().Take(2).Count() > 1;
         string Fpfx(long fid) => multiFile && fileNameMap.ContainsKey(fid) ? "[" + fileNameMap[fid] + "] " : "";
 
-        if (CompareMultiChannel)
-        {
-            var groups = data.GroupBy(r => (r.FileId, r.ChannelId, r.LoopIndex))
-                             .OrderBy(g => g.Key.FileId).ThenBy(g => g.Key.ChannelId).ThenBy(g => g.Key.LoopIndex);
-            foreach (var group in groups)
+        var groups = data.GroupBy(r => (r.FileId, r.ChannelId, r.LoopIndex))
+            .OrderBy(g => g.Key.FileId)
+            .ThenBy(g => g.Key.ChannelId)
+            .ThenBy(g => g.Key.LoopIndex)
+            .Select(group =>
             {
-                var color = Palette[colorIdx % Palette.Length];
-                colorIdx++;
                 var loopLabel = group.Key.LoopIndex == 0 ? "Initial" : "Loop " + group.Key.LoopIndex;
-                var title = Fpfx(group.Key.FileId) + "Ch" + group.Key.ChannelId +
-                            (hasMultipleLoops ? " / " + loopLabel : "");
-                AddGroupSeries(seriesList, title,
-                    group.ToList(), color, groupIdx == 0);
-                groupIdx++;
-            }
-        }
-        else
+                var title = CompareMultiChannel
+                    ? Fpfx(group.Key.FileId) + "Ch" + group.Key.ChannelId +
+                      (hasMultipleLoops ? " / " + loopLabel : "")
+                    : Fpfx(group.Key.FileId) +
+                      (hasMultipleChannels ? "Ch" + group.Key.ChannelId + " / " : "") + loopLabel;
+                return new ChartGroup(group.Key.FileId, group.Key.ChannelId, group.Key.LoopIndex, title, group.ToList());
+            })
+            .ToList();
+
+        var automaticFast = groups.Count > AutomaticFastSeriesThreshold || data.Count > AutomaticFastPointThreshold;
+        var fast = PerformanceMode || automaticFast;
+        ChartAnimationsSpeed = fast ? TimeSpan.Zero : TimeSpan.FromMilliseconds(250);
+
+        var seriesList = new List<ISeries>();
+        var legendItems = new List<LegendItem>(groups.Count + 2);
+        for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
         {
-            var hasMultipleChannels = data.Select(r => r.ChannelId).Distinct().Take(2).Count() > 1;
-            var groups = data.GroupBy(r => (r.FileId, r.ChannelId, r.LoopIndex))
-                             .OrderBy(g => g.Key.FileId).ThenBy(g => g.Key.ChannelId).ThenBy(g => g.Key.LoopIndex);
-            foreach (var group in groups)
-            {
-                var color = Palette[colorIdx % Palette.Length];
-                colorIdx++;
-                var loopLabel = group.Key.LoopIndex == 0 ? "Initial" : "Loop " + group.Key.LoopIndex;
-                var channelLabel = hasMultipleChannels ? "Ch" + group.Key.ChannelId + " / " : "";
-                AddGroupSeries(seriesList, Fpfx(group.Key.FileId) + channelLabel + loopLabel,
-                    group.ToList(), color, groupIdx == 0);
-                groupIdx++;
-            }
+            var group = groups[groupIndex];
+            AddGroupSeries(
+                seriesList,
+                legendItems,
+                group.Title,
+                group.Points,
+                Palette[groupIndex % Palette.Length],
+                drawLimits: groupIndex == 0,
+                fast: fast);
         }
 
         Series = seriesList.ToArray();
+        LegendItems = legendItems;
+        RebuildChartLookup();
+        ChartRenderSummary = automaticFast
+            ? $"Showing all {groups.Count:N0} series | Automatic fast rendering"
+            : string.Empty;
         UpdateStatistics(data);
     }
 
-    private void UpdateDiagnostics()
+    private void ClearChartDisplay()
     {
+        Series = Array.Empty<ISeries>();
+        LegendItems = Array.Empty<LegendItem>();
+        CurrentChartData.Clear();
+        ChartDataRows = Array.Empty<TestResult>();
+        Statistics = Array.Empty<StatEntry>();
+        _chartRowIndices.Clear();
+        _tooltipSeriesIndex.Clear();
+        _chartDataBounds = null;
+        ChartRenderSummary = string.Empty;
+    }
+
+    public void SetDiagnosticsActive(bool active)
+    {
+        if (_diagnosticsActive == active) return;
+        _diagnosticsActive = active;
+        if (active) UpdateDiagnostics(force: true);
+    }
+
+    private void UpdateDiagnostics(bool force = false)
+    {
+        if (!_diagnosticsActive && !force) return;
+
         var fileIds = LoadedFiles.Select(f => f.FileId).ToArray();
         if (fileIds.Length == 0 || SelectedModule == null)
         {
@@ -511,21 +569,7 @@ public partial class MainViewModel : ObservableObject
         var channels = SelectedChannels.Count > 0 ? SelectedChannels.ToArray() : null;
         var loops = SelectedLoops.Count > 0 ? SelectedLoops.ToArray() : null;
         var search = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText;
-        var data = _cache.QueryTestResults(fileIds, SelectedModule, null, channels, loops, search);
-
-        var cells = new Dictionary<(int Channel, string Item), (double Utilization, bool Failed)>();
-        foreach (var result in data)
-        {
-            var utilization = CalculateToleranceUtilization(result);
-            if (!utilization.HasValue) continue;
-
-            var key = (result.ChannelId, result.TestItemName);
-            var value = (Math.Max(utilization.Value, result.IsFailed ? 1.01 : 0), result.IsFailed);
-            if (!cells.TryGetValue(key, out var existing) || value.Item1 > existing.Utilization)
-                cells[key] = value;
-            else if (value.Item2 && !existing.Failed)
-                cells[key] = (existing.Utilization, true);
-        }
+        var cells = _cache.QueryToleranceCells(fileIds, SelectedModule, channels, loops, search);
 
         if (cells.Count == 0)
         {
@@ -534,9 +578,12 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        var channelLabels = cells.Keys.Select(k => k.Channel).Distinct().OrderBy(c => c).ToArray();
-        var itemLabels = cells.GroupBy(c => c.Key.Item)
-            .OrderBy(g => g.Max(c => c.Value.Utilization))
+        static double EffectiveUtilization(ToleranceCell cell) =>
+            Math.Max(cell.Utilization, cell.IsFailed ? 1.01 : 0);
+
+        var channelLabels = cells.Select(cell => cell.ChannelId).Distinct().OrderBy(channel => channel).ToArray();
+        var itemLabels = cells.GroupBy(cell => cell.TestItemName)
+            .OrderBy(group => group.Max(EffectiveUtilization))
             .ThenBy(g => g.Key, StringComparer.Ordinal)
             .Select(g => g.Key)
             .ToArray();
@@ -544,9 +591,9 @@ public partial class MainViewModel : ObservableObject
         var itemIndex = itemLabels.Select((item, index) => (item, index)).ToDictionary(x => x.item, x => x.index);
 
         var values = cells.Select(cell => new WeightedPoint(
-            channelIndex[cell.Key.Channel],
-            itemIndex[cell.Key.Item],
-            Math.Min(cell.Value.Utilization, 1.25))).ToArray();
+            channelIndex[cell.ChannelId],
+            itemIndex[cell.TestItemName],
+            Math.Min(EffectiveUtilization(cell), 1.25))).ToArray();
 
         ToleranceHeatmapSeries = new ISeries[]
         {
@@ -588,11 +635,11 @@ public partial class MainViewModel : ObservableObject
             }
         };
 
-        var nearLimit = cells.Count(c => c.Value.Utilization >= 0.8 && c.Value.Utilization < 1);
-        var failed = cells.Count(c => c.Value.Failed || c.Value.Utilization >= 1);
-        var worst = cells.MaxBy(c => c.Value.Utilization);
+        var nearLimit = cells.Count(cell => EffectiveUtilization(cell) >= 0.8 && EffectiveUtilization(cell) < 1);
+        var failed = cells.Count(cell => cell.IsFailed || EffectiveUtilization(cell) >= 1);
+        var worst = cells.MaxBy(EffectiveUtilization)!;
         ToleranceHeatmapSummary = $"{cells.Count} cells  |  Near limit: {nearLimit}  |  Failed: {failed}  |  " +
-            $"Worst: Ch{worst.Key.Channel} / {worst.Key.Item} ({worst.Value.Utilization:P1})";
+            $"Worst: Ch{worst.ChannelId} / {worst.TestItemName} ({EffectiveUtilization(worst):P1})";
     }
 
     private void UpdateCoefficientCharts()
@@ -684,29 +731,43 @@ public partial class MainViewModel : ObservableObject
                 r.ChannelId,
                 r.LoopIndex,
                 Component: r.ModuleType == ModuleType.MIXI ? NormalizeMixiComponent(r.ComponentType) : string.Empty))
-            .OrderBy(g => g.Key.FileId).ThenBy(g => g.Key.ChannelId).ThenBy(g => g.Key.LoopIndex).ThenBy(g => g.Key.Component);
-        var colorIndex = 0;
-        foreach (var group in groups)
-        {
-            var color = Palette[colorIndex++ % Palette.Length];
-            var title = BuildDiagnosticGroupTitle(group.Key.FileId, group.Key.LoopIndex, group.Key.ChannelId, group.Key.Component);
-            var points = group.OrderBy(r => r.ExpectValue).ToArray();
-            series.Add(new LineSeries<ObservablePoint>
-            {
-                Name = title,
-                Values = points.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
-                Stroke = new SolidColorPaint(color) { StrokeThickness = 1.5f },
-                GeometryStroke = new SolidColorPaint(color) { StrokeThickness = 1.5f },
-                GeometryFill = new SolidColorPaint(SKColors.White),
-                GeometrySize = 5,
-                Fill = null,
-                LineSmoothness = 0
-            });
+            .OrderBy(g => g.Key.FileId).ThenBy(g => g.Key.ChannelId).ThenBy(g => g.Key.LoopIndex).ThenBy(g => g.Key.Component)
+            .Select(group => (
+                Title: BuildDiagnosticGroupTitle(group.Key.FileId, group.Key.LoopIndex, group.Key.ChannelId, group.Key.Component),
+                Points: group.OrderBy(result => result.ExpectValue).ToArray()))
+            .ToList();
+        var limited = groups.Count > DiagnosticLargeSeriesThreshold || data.Count > DiagnosticLargePointThreshold;
+        var fast = limited || groups.Count > DiagnosticDetailSeriesLimit || data.Count > AutomaticFastPointThreshold;
+        var renderedGroups = limited
+            ? groups
+                .OrderByDescending(group => group.Points
+                    .Select(CalculateToleranceUtilization)
+                    .Where(value => value.HasValue)
+                    .Select(value => value!.Value)
+                    .DefaultIfEmpty(0)
+                    .Max())
+                .Take(DiagnosticWorstGroupCount)
+                .ToList()
+            : groups;
 
-            if (TryLinearRegression(points.Select(p => (p.ExpectValue, p.Difference)), out var slope, out var intercept))
+        for (var index = 0; index < renderedGroups.Count; index++)
+        {
+            var group = renderedGroups[index];
+            var color = Palette[index % Palette.Length];
+            AddDiagnosticLine(
+                series,
+                group.Title,
+                group.Points.Select(point => (point.ExpectValue, point.Difference)),
+                color,
+                fast);
+
+            if (!fast && TryLinearRegression(
+                    group.Points.Select(point => (point.ExpectValue, point.Difference)),
+                    out var slope,
+                    out var intercept))
             {
-                var minX = points.Min(p => p.ExpectValue);
-                var maxX = points.Max(p => p.ExpectValue);
+                var minX = group.Points.Min(point => point.ExpectValue);
+                var maxX = group.Points.Max(point => point.ExpectValue);
                 series.Add(new LineSeries<ObservablePoint>
                 {
                     Name = null,
@@ -750,7 +811,8 @@ public partial class MainViewModel : ObservableObject
         var rms = Math.Sqrt(data.Average(r => r.Difference * r.Difference));
         var worst = data.OrderByDescending(r => Math.Abs(r.Difference)).First();
         var worstUtilization = data.Select(CalculateToleranceUtilization).Where(v => v.HasValue).Select(v => v!.Value).DefaultIfEmpty(0).Max();
-        ResidualSummary = $"{data.Count} points  |  RMS: {rms:G6}  |  Max |residual|: {Math.Abs(worst.Difference):G6} " +
+        var renderLabel = limited ? $"Large selection: worst {renderedGroups.Count} groups  |  " : fast ? "Fast  |  " : string.Empty;
+        ResidualSummary = $"{renderLabel}{data.Count} points  |  RMS: {rms:G6}  |  Max |residual|: {Math.Abs(worst.Difference):G6} " +
             $"(Ch{worst.ChannelId})  |  Worst utilization: {worstUtilization:P1}";
     }
 
@@ -775,60 +837,103 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        var componentColors = new Dictionary<string, SKColor>(StringComparer.OrdinalIgnoreCase)
+        var pairs = new List<(long FileId, int ChannelId, int LoopIndex, double Target, double Mismatch)>();
+        foreach (var group in data.GroupBy(r => (
+                     r.FileId,
+                     r.ChannelId,
+                     r.LoopIndex,
+                     Target: Math.Round(r.ExpectValue, 12))))
         {
-            ["POS"] = SKColor.Parse("#238A8D"),
-            ["NEG"] = SKColor.Parse("#E07A3F"),
-            ["AVG"] = SKColor.Parse("#66727F"),
-            ["DIFF"] = SKColor.Parse("#C63D4F")
-        };
-        var series = new List<ISeries>();
-        var groups = data.GroupBy(r => (
-                r.FileId,
-                r.ChannelId,
-                r.LoopIndex,
-                Component: NormalizeMixiComponent(r.ComponentType)))
-            .OrderBy(g => g.Key.FileId).ThenBy(g => g.Key.ChannelId).ThenBy(g => g.Key.LoopIndex).ThenBy(g => g.Key.Component);
-        foreach (var group in groups)
-        {
-            var color = componentColors.TryGetValue(group.Key.Component, out var mapped) ? mapped : SKColors.Gray;
-            var title = BuildDiagnosticGroupTitle(group.Key.FileId, group.Key.LoopIndex, group.Key.ChannelId, group.Key.Component);
-            series.Add(new LineSeries<ObservablePoint>
-            {
-                Name = title,
-                Values = group.OrderBy(r => r.ExpectValue)
-                    .Select(r => new ObservablePoint(r.ExpectValue, r.Difference)).ToArray(),
-                Stroke = new SolidColorPaint(color) { StrokeThickness = 1.5f },
-                GeometryStroke = new SolidColorPaint(color) { StrokeThickness = 1.5f },
-                GeometryFill = new SolidColorPaint(SKColors.White),
-                GeometrySize = 6,
-                Fill = null,
-                LineSmoothness = 0
-            });
+            var pos = group.FirstOrDefault(r => NormalizeMixiComponent(r.ComponentType) == "POS");
+            var neg = group.FirstOrDefault(r => NormalizeMixiComponent(r.ComponentType) == "NEG");
+            if (pos == null || neg == null) continue;
+
+            pairs.Add((group.Key.FileId, group.Key.ChannelId, group.Key.LoopIndex,
+                group.Key.Target, pos.Difference - neg.Difference));
         }
+
+        if (pairs.Count == 0)
+        {
+            SymmetrySeries = Array.Empty<ISeries>();
+            SymmetrySummary = $"{data.Count} component points  |  No matching POS/NEG target pairs in this item.";
+            return;
+        }
+
+        var series = new List<ISeries>();
+        var groups = pairs.GroupBy(pair => (pair.FileId, pair.ChannelId, pair.LoopIndex))
+            .OrderBy(g => g.Key.FileId).ThenBy(g => g.Key.ChannelId).ThenBy(g => g.Key.LoopIndex)
+            .Select(group => (
+                Title: BuildDiagnosticGroupTitle(group.Key.FileId, group.Key.LoopIndex, group.Key.ChannelId, "Mismatch"),
+                Points: group.OrderBy(pair => pair.Target).ToArray()))
+            .ToList();
+        var limited = groups.Count > DiagnosticLargeSeriesThreshold || pairs.Count > DiagnosticLargePointThreshold;
+        var fast = limited || groups.Count > DiagnosticDetailSeriesLimit || pairs.Count > AutomaticFastPointThreshold;
+        var renderedGroups = limited
+            ? groups
+                .OrderByDescending(group => group.Points.Max(point => Math.Abs(point.Mismatch)))
+                .Take(DiagnosticWorstGroupCount)
+                .ToList()
+            : groups;
+
+        for (var index = 0; index < renderedGroups.Count; index++)
+        {
+            var group = renderedGroups[index];
+            AddDiagnosticLine(
+                series,
+                group.Title,
+                group.Points.Select(point => (point.Target, point.Mismatch)),
+                Palette[index % Palette.Length],
+                fast);
+        }
+
+        var minTarget = pairs.Min(pair => pair.Target);
+        var maxTarget = pairs.Max(pair => pair.Target);
+        if (Math.Abs(maxTarget - minTarget) < 1e-20)
+        {
+            minTarget -= 0.5;
+            maxTarget += 0.5;
+        }
+        series.Insert(0, new LineSeries<ObservablePoint>
+        {
+            Name = null,
+            IsVisibleAtLegend = false,
+            Values = new[] { new ObservablePoint(minTarget, 0), new ObservablePoint(maxTarget, 0) },
+            Stroke = new SolidColorPaint(new SKColor(90, 98, 108, 150)) { StrokeThickness = 1 },
+            GeometryStroke = null,
+            GeometrySize = 0,
+            Fill = null,
+            LineSmoothness = 0
+        });
 
         SymmetrySeries = series.ToArray();
         SymmetryXAxes = new[] { new Axis { Name = "Target", TextSize = 10 } };
-        SymmetryYAxes = new[] { new Axis { Name = "Meas - Target", TextSize = 10 } };
+        SymmetryYAxes = new[] { new Axis { Name = "POS residual - NEG residual", TextSize = 10 } };
 
-        var pairedDifferences = data.GroupBy(r => (
-                r.FileId,
-                r.ChannelId,
-                r.LoopIndex,
-                Target: Math.Round(r.ExpectValue, 12)))
-            .Select(group =>
-            {
-                var pos = group.FirstOrDefault(r => NormalizeMixiComponent(r.ComponentType) == "POS");
-                var neg = group.FirstOrDefault(r => NormalizeMixiComponent(r.ComponentType) == "NEG");
-                return pos != null && neg != null ? Math.Abs(pos.Difference - neg.Difference) : (double?)null;
-            })
-            .Where(value => value.HasValue)
-            .Select(value => value!.Value)
-            .ToArray();
+        var worst = pairs.MaxBy(pair => Math.Abs(pair.Mismatch));
+        var renderLabel = limited ? $"Large selection: worst {renderedGroups.Count} groups  |  " : fast ? "Fast  |  " : string.Empty;
+        SymmetrySummary = $"{renderLabel}{pairs.Count} POS/NEG pairs  |  Mean |mismatch|: {pairs.Average(pair => Math.Abs(pair.Mismatch)):G6}  |  " +
+            $"Max |mismatch|: {Math.Abs(worst.Mismatch):G6} (Ch{worst.ChannelId} / Target {worst.Target:G6})";
+    }
 
-        SymmetrySummary = pairedDifferences.Length > 0
-            ? $"{pairedDifferences.Length} POS/NEG pairs  |  Mean mismatch: {pairedDifferences.Average():G6}  |  Max mismatch: {pairedDifferences.Max():G6}"
-            : $"{data.Count} component points  |  No matching POS/NEG target pairs in this item.";
+    private static void AddDiagnosticLine(
+        List<ISeries> series,
+        string title,
+        IEnumerable<(double X, double Y)> values,
+        SKColor color,
+        bool fast,
+        float strokeThickness = 1.5f)
+    {
+        series.Add(new LineSeries<ObservablePoint>
+        {
+            Name = title,
+            Values = values.Select(point => new ObservablePoint(point.X, point.Y)).ToArray(),
+            Stroke = new SolidColorPaint(color) { StrokeThickness = strokeThickness },
+            GeometryStroke = fast ? null : new SolidColorPaint(color) { StrokeThickness = 1.5f },
+            GeometryFill = fast ? null : new SolidColorPaint(SKColors.White),
+            GeometrySize = fast ? 0 : 5,
+            Fill = null,
+            LineSmoothness = 0
+        });
     }
 
     private string BuildDiagnosticGroupTitle(long fileId, int loopIndex, int? channelId = null, string? component = null)
@@ -911,124 +1016,221 @@ public partial class MainViewModel : ObservableObject
         return string.IsNullOrEmpty(normalized) ? "OTHER" : normalized;
     }
 
-    private void AddGroupSeries(List<ISeries> seriesList, string title, List<TestResult> points, SKColor color, bool drawLimits)
+    private void AddGroupSeries(
+        List<ISeries> seriesList,
+        List<LegendItem> legendItems,
+        string title,
+        List<TestResult> points,
+        SKColor color,
+        bool drawLimits,
+        bool fast)
     {
         if (points.Count == 0) return;
         var ordered = points.OrderBy(r => r.ExpectValue).ToList();
-        bool isMixi = ordered.Count > 0 && ordered[0].ModuleType == ModuleType.MIXI;
 
-        if (PerformanceMode)
+        var lineSeries = new LineSeries<ObservablePoint>
         {
-            // Lightweight: line + limits, no geometry markers, no failed overlay
-            var lineSeries = new LineSeries<ObservablePoint>
+            Name = title,
+            Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
+            Stroke = new SolidColorPaint(color) { StrokeThickness = fast ? 1.5f : 2f },
+            GeometryStroke = fast ? null : new SolidColorPaint(color) { StrokeThickness = 2f },
+            GeometrySize = fast ? 0f : 6f,
+            Fill = null,
+            LineSmoothness = 0f
+        };
+        seriesList.Add(lineSeries);
+        _seriesFocusKeys[lineSeries] = title;
+        legendItems.Add(new LegendItem
+        {
+            Name = title,
+            FocusKey = title,
+            ColorBrush = new SolidColorBrush(Color.FromRgb(color.Red, color.Green, color.Blue))
+        });
+
+        foreach (var point in ordered)
+        {
+            CurrentChartData.Add(new TooltipDataPoint
             {
-                Name = title,
-                Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
-                Stroke = new SolidColorPaint(color) { StrokeThickness = 1.5f },
-                GeometryStroke = null,
-                GeometrySize = 0f,
-                Fill = null,
-                LineSmoothness = 0f
-            };
-            seriesList.Add(lineSeries);
-            _seriesFocusKeys[lineSeries] = title;
-            LegendItems.Add(new LegendItem { Name = title, FocusKey = title, ColorBrush = new SolidColorBrush(Color.FromRgb(color.Red, color.Green, color.Blue)) });
+                SeriesName = title,
+                ExpectValue = point.ExpectValue,
+                Difference = point.Difference,
+                MeasureValue = point.MeasureValue,
+                IsFailed = point.IsFailed,
+                WaveValue = point.WaveValue,
+                OffsetValue = point.OffsetValue,
+                DiffValue = point.DiffValue,
+                RowIndex = _chartRowIndices.GetValueOrDefault(point, -1)
+            });
+        }
 
-            foreach (var p in ordered)
-                CurrentChartData.Add(new TooltipDataPoint { SeriesName = title, ExpectValue = p.ExpectValue, Difference = p.Difference, MeasureValue = p.MeasureValue, IsFailed = p.IsFailed, IsLimit = false, WaveValue = p.WaveValue, OffsetValue = p.OffsetValue, DiffValue = p.DiffValue, RowIndex = ChartDataRows.IndexOf(p) });
+        if (drawLimits) AddLimitSeries(seriesList, legendItems, ordered);
 
-            if (drawLimits)
+        if (fast) return;
+
+        var failedPoints = ordered.Where(p => p.IsFailed).ToList();
+        if (failedPoints.Count == 0) return;
+
+        var failSeries = new ScatterSeries<ObservablePoint>
+        {
+            Name = title + " (Failed)",
+            Values = failedPoints.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
+            Fill = new SolidColorPaint(SKColors.Red),
+            GeometrySize = 12f
+        };
+        seriesList.Add(failSeries);
+        _seriesFocusKeys[failSeries] = title;
+        legendItems.Add(new LegendItem
+        {
+            Name = title + " (Failed)",
+            FocusKey = title,
+            ColorBrush = Brushes.Red
+        });
+    }
+
+    private void AddLimitSeries(
+        List<ISeries> seriesList,
+        List<LegendItem> legendItems,
+        IReadOnlyList<TestResult> points)
+    {
+        if (points.Count == 0) return;
+        var ordered = points.OrderBy(point => point.ExpectValue).ToArray();
+        var isMixi = ordered[0].ModuleType == ModuleType.MIXI;
+
+        var highLimit = new LineSeries<ObservablePoint>
+        {
+            Name = "High Limit",
+            Values = ordered.Select(point => new ObservablePoint(
+                point.ExpectValue,
+                isMixi ? point.UpLimit - point.ExpectValue : point.UpLimit)).ToArray(),
+            Stroke = new SolidColorPaint(new SKColor(220, 50, 50, 160)) { StrokeThickness = 1.5f },
+            GeometryStroke = null,
+            GeometrySize = 0f,
+            Fill = null,
+            LineSmoothness = 0f
+        };
+        seriesList.Add(highLimit);
+        legendItems.Add(new LegendItem
+        {
+            Name = "High Limit",
+            ColorBrush = new SolidColorBrush(Color.FromRgb(220, 50, 50))
+        });
+
+        var lowLimit = new LineSeries<ObservablePoint>
+        {
+            Name = "Low Limit",
+            Values = ordered.Select(point => new ObservablePoint(
+                point.ExpectValue,
+                isMixi ? point.LowLimit - point.ExpectValue : point.LowLimit)).ToArray(),
+            Stroke = new SolidColorPaint(new SKColor(50, 100, 220, 160)) { StrokeThickness = 1.5f },
+            GeometryStroke = null,
+            GeometrySize = 0f,
+            Fill = null,
+            LineSmoothness = 0f
+        };
+        seriesList.Add(lowLimit);
+        legendItems.Add(new LegendItem
+        {
+            Name = "Low Limit",
+            ColorBrush = new SolidColorBrush(Color.FromRgb(50, 100, 220))
+        });
+
+        foreach (var point in ordered)
+        {
+            CurrentChartData.Add(new TooltipDataPoint
             {
-                var highLimit = new LineSeries<ObservablePoint>
-                {
-                    Name = "High Limit",
-                    Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, isMixi ? p.UpLimit - p.ExpectValue : p.UpLimit)).ToArray(),
-                    Stroke = new SolidColorPaint(new SKColor(220, 50, 50, 160)) { StrokeThickness = 1.5f },
-                    GeometryStroke = null, GeometrySize = 0f, Fill = null, LineSmoothness = 0f
-                };
-                seriesList.Add(highLimit);
-                LegendItems.Add(new LegendItem { Name = "High Limit", ColorBrush = new SolidColorBrush(Color.FromRgb(220, 50, 50)) });
+                SeriesName = "High Limit",
+                ExpectValue = point.ExpectValue,
+                Difference = isMixi ? point.UpLimit - point.ExpectValue : point.UpLimit,
+                IsLimit = true
+            });
+            CurrentChartData.Add(new TooltipDataPoint
+            {
+                SeriesName = "Low Limit",
+                ExpectValue = point.ExpectValue,
+                Difference = isMixi ? point.LowLimit - point.ExpectValue : point.LowLimit,
+                IsLimit = true
+            });
+        }
+    }
 
-                var lowLimit = new LineSeries<ObservablePoint>
-                {
-                    Name = "Low Limit",
-                    Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, isMixi ? p.LowLimit - p.ExpectValue : p.LowLimit)).ToArray(),
-                    Stroke = new SolidColorPaint(new SKColor(50, 100, 220, 160)) { StrokeThickness = 1.5f },
-                    GeometryStroke = null, GeometrySize = 0f, Fill = null, LineSmoothness = 0f
-                };
-                seriesList.Add(lowLimit);
-                LegendItems.Add(new LegendItem { Name = "Low Limit", ColorBrush = new SolidColorBrush(Color.FromRgb(50, 100, 220)) });
+    private void RebuildChartLookup()
+    {
+        _tooltipSeriesIndex.Clear();
+        foreach (var group in CurrentChartData
+                     .Where(point => !point.IsLimit)
+                     .GroupBy(point => point.SeriesName, StringComparer.Ordinal))
+        {
+            _tooltipSeriesIndex[group.Key] = group.OrderBy(point => point.ExpectValue).ToArray();
+        }
 
-                foreach (var p in ordered)
-                {
-                    CurrentChartData.Add(new TooltipDataPoint { SeriesName = "High Limit", ExpectValue = p.ExpectValue, Difference = isMixi ? p.UpLimit - p.ExpectValue : p.UpLimit, IsLimit = true });
-                    CurrentChartData.Add(new TooltipDataPoint { SeriesName = "Low Limit", ExpectValue = p.ExpectValue, Difference = isMixi ? p.LowLimit - p.ExpectValue : p.LowLimit, IsLimit = true });
-                }
+        var finite = CurrentChartData
+            .Where(point => double.IsFinite(point.ExpectValue) && double.IsFinite(point.Difference))
+            .ToArray();
+        _chartDataBounds = finite.Length == 0
+            ? null
+            : (finite.Min(point => point.ExpectValue), finite.Max(point => point.ExpectValue),
+                finite.Min(point => point.Difference), finite.Max(point => point.Difference));
+    }
+
+    public bool TryGetChartBounds(out double xMin, out double xMax, out double yMin, out double yMax)
+    {
+        if (!_chartDataBounds.HasValue)
+        {
+            xMin = xMax = yMin = yMax = 0;
+            return false;
+        }
+
+        (xMin, xMax, yMin, yMax) = _chartDataBounds.Value;
+        return true;
+    }
+
+    public TooltipDataPoint? FindNearestChartPoint(
+        double dataX,
+        double dataY,
+        double xScale,
+        double yScale,
+        out double distance)
+    {
+        TooltipDataPoint? nearest = null;
+        var nearestSquaredDistance = double.MaxValue;
+
+        foreach (var (seriesName, points) in _tooltipSeriesIndex)
+        {
+            if (!IsChartSeriesVisible(seriesName) || points.Length == 0) continue;
+
+            var index = FindInsertionIndex(points, dataX);
+            var start = Math.Max(0, index - 3);
+            var end = Math.Min(points.Length - 1, index + 3);
+            for (var pointIndex = start; pointIndex <= end; pointIndex++)
+            {
+                var point = points[pointIndex];
+                var dx = (point.ExpectValue - dataX) * xScale;
+                var dy = (point.Difference - dataY) * yScale;
+                var squaredDistance = dx * dx + dy * dy;
+                if (squaredDistance >= nearestSquaredDistance) continue;
+
+                nearestSquaredDistance = squaredDistance;
+                nearest = point;
             }
         }
-        else
+
+        distance = nearest == null ? double.MaxValue : Math.Sqrt(nearestSquaredDistance);
+        return nearest;
+    }
+
+    private static int FindInsertionIndex(IReadOnlyList<TooltipDataPoint> points, double x)
+    {
+        var low = 0;
+        var high = points.Count;
+        while (low < high)
         {
-            // Quality: LineSeries with ObservablePoint, markers, limit lines, failed overlays
-            var lineSeries = new LineSeries<ObservablePoint>
-            {
-                Name = title,
-                Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
-                Stroke = new SolidColorPaint(color) { StrokeThickness = 2f },
-                GeometryStroke = new SolidColorPaint(color) { StrokeThickness = 2f },
-                GeometrySize = 6f,
-                Fill = null,
-                LineSmoothness = 0f
-            };
-            seriesList.Add(lineSeries);
-            _seriesFocusKeys[lineSeries] = title;
-            LegendItems.Add(new LegendItem { Name = title, FocusKey = title, ColorBrush = new SolidColorBrush(Color.FromRgb(color.Red, color.Green, color.Blue)) });
-
-            foreach (var p in ordered)
-                CurrentChartData.Add(new TooltipDataPoint { SeriesName = title, ExpectValue = p.ExpectValue, Difference = p.Difference, MeasureValue = p.MeasureValue, IsFailed = p.IsFailed, IsLimit = false, WaveValue = p.WaveValue, OffsetValue = p.OffsetValue, DiffValue = p.DiffValue, RowIndex = ChartDataRows.IndexOf(p) });
-
-            if (drawLimits)
-            {
-                var highLimit = new LineSeries<ObservablePoint>
-                {
-                    Name = "High Limit",
-                    Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, isMixi ? p.UpLimit - p.ExpectValue : p.UpLimit)).ToArray(),
-                    Stroke = new SolidColorPaint(new SKColor(220, 50, 50, 160)) { StrokeThickness = 1.5f },
-                    GeometryStroke = null, GeometrySize = 0f, Fill = null, LineSmoothness = 0f
-                };
-                seriesList.Add(highLimit);
-                LegendItems.Add(new LegendItem { Name = "High Limit", ColorBrush = new SolidColorBrush(Color.FromRgb(220, 50, 50)) });
-
-                var lowLimit = new LineSeries<ObservablePoint>
-                {
-                    Name = "Low Limit",
-                    Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, isMixi ? p.LowLimit - p.ExpectValue : p.LowLimit)).ToArray(),
-                    Stroke = new SolidColorPaint(new SKColor(50, 100, 220, 160)) { StrokeThickness = 1.5f },
-                    GeometryStroke = null, GeometrySize = 0f, Fill = null, LineSmoothness = 0f
-                };
-                seriesList.Add(lowLimit);
-                LegendItems.Add(new LegendItem { Name = "Low Limit", ColorBrush = new SolidColorBrush(Color.FromRgb(50, 100, 220)) });
-
-                foreach (var p in ordered)
-                {
-                    CurrentChartData.Add(new TooltipDataPoint { SeriesName = "High Limit", ExpectValue = p.ExpectValue, Difference = isMixi ? p.UpLimit - p.ExpectValue : p.UpLimit, IsLimit = true });
-                    CurrentChartData.Add(new TooltipDataPoint { SeriesName = "Low Limit", ExpectValue = p.ExpectValue, Difference = isMixi ? p.LowLimit - p.ExpectValue : p.LowLimit, IsLimit = true });
-                }
-            }
-
-            var failedPoints = ordered.Where(p => p.IsFailed).ToList();
-            if (failedPoints.Count > 0)
-            {
-                var failSeries = new ScatterSeries<ObservablePoint>
-                {
-                    Name = title + " (Failed)",
-                    Values = failedPoints.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
-                    Fill = new SolidColorPaint(SKColors.Red), GeometrySize = 12f
-                };
-                seriesList.Add(failSeries);
-                _seriesFocusKeys[failSeries] = title;
-                LegendItems.Add(new LegendItem { Name = title + " (Failed)", FocusKey = title, ColorBrush = Brushes.Red });
-            }
+            var middle = low + (high - low) / 2;
+            if (points[middle].ExpectValue < x)
+                low = middle + 1;
+            else
+                high = middle;
         }
+        return low;
     }
 
     private void RefreshSecondaryViews()
@@ -1045,8 +1247,11 @@ public partial class MainViewModel : ObservableObject
 
     private void UpdateStatistics(List<TestResult> data)
     {
-        Statistics.Clear();
-        if (data == null || data.Count == 0) return;
+        if (data.Count == 0)
+        {
+            Statistics = Array.Empty<StatEntry>();
+            return;
+        }
         var multiFile = LoadedFiles.Count > 1;
         var fileNameMap = LoadedFiles.ToDictionary(f => f.FileId, f => Path.GetFileNameWithoutExtension(f.FileName));
         var hasMultipleChannels = data.Select(r => r.ChannelId).Distinct().Take(2).Count() > 1;
@@ -1060,12 +1265,13 @@ public partial class MainViewModel : ObservableObject
                 (multiFile && fileNameMap.ContainsKey(r.FileId) ? "[" + fileNameMap[r.FileId] + "] " : "") +
                 (hasMultipleChannels ? "Ch" + r.ChannelId + " / " : "") +
                 (r.LoopIndex == 0 ? "Initial" : "Loop " + r.LoopIndex));
-        foreach (var g in groups.OrderBy(x => x.Key))
+        var entries = new List<StatEntry>();
+        foreach (var g in groups.OrderBy(x => x.Key, StringComparer.Ordinal))
         {
             var diffs = g.Select(r => r.Difference).ToList();
             if (diffs.Count == 0) continue;
             var mean = diffs.Average();
-            Statistics.Add(new StatEntry
+            entries.Add(new StatEntry
             {
                 GroupName = g.Key, Count = diffs.Count,
                 Max = diffs.Max(), Min = diffs.Min(), Mean = mean,
@@ -1073,6 +1279,7 @@ public partial class MainViewModel : ObservableObject
                 FailCount = g.Count(r => r.IsFailed)
             });
         }
+        Statistics = entries;
     }
 
     [RelayCommand]
@@ -1083,7 +1290,7 @@ public partial class MainViewModel : ObservableObject
         AvailableCoefficientNames.Clear();
         SelectedChannels.Clear(); SelectedLoops.Clear();
         ErrorEntries.Clear(); DeviceEntries.Clear(); SystemInfos.Clear();
-        Statistics.Clear(); PassFailEntries.Clear(); LegendItems.Clear(); CurrentChartData.Clear(); ChartDataRows.Clear(); SelectedChartRow = null;
+        Statistics = Array.Empty<StatEntry>(); PassFailEntries.Clear(); LegendItems = Array.Empty<LegendItem>(); CurrentChartData.Clear(); ChartDataRows = Array.Empty<TestResult>(); SelectedChartRow = null;
         SelectedModule = null; SelectedTestItem = null;
         SelectedCoefficientName = null;
         InitializeChart();

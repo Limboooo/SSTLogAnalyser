@@ -6,7 +6,7 @@ namespace SSTLogAnalyser.Services;
 
 public class CacheService : IDisposable
 {
-    private const int CurrentParserVersion = 3;
+    private const int CurrentParserVersion = 4;
     private readonly string _dbPath;
     private SqliteConnection _connection;
 
@@ -493,6 +493,63 @@ public class CacheService : IDisposable
         while (reader.Read())
             list.Add(MapTestResult(reader));
         return list;
+    }
+
+    public List<ToleranceCell> QueryToleranceCells(
+        long[] fileIds,
+        string? moduleType,
+        int[]? channels,
+        int[]? loops,
+        string? search = null)
+    {
+        using var cmd = _connection.CreateCommand();
+        var where = BuildFileIdWhere(fileIds);
+        if (moduleType != null) where += " AND module_type = @mod";
+        if (search != null) where += " AND test_item_name LIKE @search";
+        if (channels != null && channels.Length > 0)
+        {
+            var channelParams = string.Join(",", channels.Select((_, index) => "@cellChannel" + index));
+            where += " AND channel_id IN (" + channelParams + ")";
+            for (var index = 0; index < channels.Length; index++)
+                cmd.Parameters.AddWithValue("@cellChannel" + index, channels[index]);
+        }
+        if (loops != null && loops.Length > 0)
+        {
+            var loopParams = string.Join(",", loops.Select((_, index) => "@cellLoop" + index));
+            where += " AND loop_index IN (" + loopParams + ")";
+            for (var index = 0; index < loops.Length; index++)
+                cmd.Parameters.AddWithValue("@cellLoop" + index, loops[index]);
+        }
+
+        cmd.CommandText = @"
+            SELECT channel_id, test_item_name,
+                   MAX(ABS(
+                       ((CASE WHEN module_type = 'MIXI' THEN measure_value ELSE difference_value END)
+                         - ((up_limit + low_limit) / 2.0))
+                       / ((up_limit - low_limit) / 2.0))) AS utilization,
+                   MAX(is_failed) AS is_failed
+            FROM test_results
+            WHERE " + where + @" AND ABS(up_limit - low_limit) >= 1e-30
+            GROUP BY channel_id, test_item_name
+            ORDER BY channel_id, test_item_name";
+        if (moduleType != null) cmd.Parameters.AddWithValue("@mod", moduleType);
+        if (search != null) cmd.Parameters.AddWithValue("@search", "%" + search + "%");
+        AddFileIdParams(cmd, fileIds);
+
+        var cells = new List<ToleranceCell>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.IsDBNull(2)) continue;
+            cells.Add(new ToleranceCell
+            {
+                ChannelId = reader.GetInt32(0),
+                TestItemName = reader.GetString(1),
+                Utilization = reader.GetDouble(2),
+                IsFailed = reader.GetInt32(3) == 1
+            });
+        }
+        return cells;
     }
 
     public List<ErrorLogEntry> GetErrors(long[] fileIds)

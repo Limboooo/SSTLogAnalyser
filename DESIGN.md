@@ -92,6 +92,8 @@ The `LogParser` processes LOG files line by line using regex and string matching
 
 Test result blocks are identified by detecting header lines and parsing subsequent data rows. Each row produces a `TestResult` with fields: Module, Channel, TestItem, LoopIndex, Expected, Measured, Difference, Limits, Pass/Fail status.
 
+PPMU blocks use dedicated section headers such as `PPMU FV Verification` and `PPMU FI I1_2uA Verification`. Pin qualifiers `(FV)`, `(MV)`, `(FI)`, and `(MI)` are normalized into separate test items. PPMU calibration rows are stored as `CalibrationCoefficient` records under the `PPMU` module.
+
 ### MIXI Module Parsing
 
 The MIXI module type contains sub-modules AWG and DTZ, each with distinct test items and channels. MIXI data lines follow the format:

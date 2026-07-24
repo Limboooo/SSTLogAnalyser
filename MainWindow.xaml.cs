@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -9,6 +10,10 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _vm;
     private Point? _chartLeftButtonDownPosition;
+    private long _lastTooltipUpdateTimestamp;
+    private int _channelPageStartIndex;
+    private bool _suppressChannelSelectionChanged;
+    private const int ChannelPageSize = 128;
 
     public MainWindow()
     {
@@ -16,9 +21,16 @@ public partial class MainWindow : Window
         MainTabControl.Items.Remove(DiagnosticsTab);
         MainTabControl.Items.Insert(1, DiagnosticsTab);
         _vm = new MainViewModel();
-        _vm.AvailableChannels.CollectionChanged += (_, _) => EnsureDefaultChannelSelection();
+        _vm.AvailableChannels.CollectionChanged += (_, _) =>
+        {
+            _channelPageStartIndex = 0;
+            EnsureDefaultChannelSelection();
+            UpdateChannelPageText();
+        };
         _vm.AvailableLoops.CollectionChanged += (_, _) => EnsureDefaultLoopSelection();
         DataContext = _vm;
+        UpdateChannelPageText();
+        UpdateDiagnosticsActiveState();
     }
 
     private void Window_Drop(object sender, DragEventArgs e)
@@ -38,11 +50,17 @@ public partial class MainWindow : Window
 
     private void ChannelList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (sender is not ListBox lb) return;
+        if (_suppressChannelSelectionChanged || sender is not ListBox lb) return;
         _vm.SetSelectedChannels(lb.SelectedItems.OfType<int>());
     }
 
     private void AllChannels_Click(object sender, RoutedEventArgs e) => SelectAllChannels();
+
+    private void PreviousChannelPage_Click(object sender, RoutedEventArgs e) =>
+        SelectChannelPage(_channelPageStartIndex - ChannelPageSize);
+
+    private void NextChannelPage_Click(object sender, RoutedEventArgs e) =>
+        SelectChannelPage(_channelPageStartIndex + ChannelPageSize);
 
     private void MultiChannel_Checked(object sender, RoutedEventArgs e)
     {
@@ -60,9 +78,65 @@ public partial class MainWindow : Window
 
     private void SelectAllChannels()
     {
-        ChannelList.UnselectAll();
-        if (DataContext is MainViewModel viewModel)
-            viewModel.SetSelectedChannels(Array.Empty<int>());
+        _suppressChannelSelectionChanged = true;
+        try
+        {
+            ChannelList.UnselectAll();
+        }
+        finally
+        {
+            _suppressChannelSelectionChanged = false;
+        }
+        _vm.SetSelectedChannels(Array.Empty<int>());
+        UpdateChannelPageText();
+    }
+
+    private void SelectChannelPage(int requestedStart)
+    {
+        var count = _vm.AvailableChannels.Count;
+        if (count == 0)
+        {
+            UpdateChannelPageText();
+            return;
+        }
+
+        var lastPageStart = ((count - 1) / ChannelPageSize) * ChannelPageSize;
+        _channelPageStartIndex = Math.Clamp(requestedStart, 0, lastPageStart);
+        var channels = _vm.AvailableChannels
+            .Skip(_channelPageStartIndex)
+            .Take(ChannelPageSize)
+            .ToArray();
+
+        _suppressChannelSelectionChanged = true;
+        try
+        {
+            ChannelList.UnselectAll();
+            foreach (var channel in channels)
+                ChannelList.SelectedItems.Add(channel);
+        }
+        finally
+        {
+            _suppressChannelSelectionChanged = false;
+        }
+
+        _vm.SetSelectedChannels(channels);
+        if (channels.Length > 0) ChannelList.ScrollIntoView(channels[0]);
+        UpdateChannelPageText();
+    }
+
+    private void UpdateChannelPageText()
+    {
+        if (ChannelPageText == null) return;
+        var count = _vm?.AvailableChannels.Count ?? 0;
+        if (count == 0)
+        {
+            ChannelPageText.Text = "0 / 0";
+            return;
+        }
+
+        var start = Math.Clamp(_channelPageStartIndex, 0, count - 1);
+        var end = Math.Min(start + ChannelPageSize, count);
+        ChannelPageText.Text = $"{start + 1}-{end} / {count}";
     }
 
     private void EnsureDefaultLoopSelection(bool force = false)
@@ -111,6 +185,12 @@ public partial class MainWindow : Window
                 return;
             }
 
+            var now = Stopwatch.GetTimestamp();
+            if (_lastTooltipUpdateTimestamp != 0 &&
+                Stopwatch.GetElapsedTime(_lastTooltipUpdateTimestamp, now) < TimeSpan.FromMilliseconds(40))
+                return;
+            _lastTooltipUpdateTimestamp = now;
+
             if (_vm.CurrentChartData.Count == 0)
             {
                 TooltipPanel.Visibility = Visibility.Collapsed;
@@ -124,22 +204,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            // Find closest non-limit data point
-            TooltipDataPoint? nearest = null;
-            double nearestDist = double.MaxValue;
-
-            foreach (var dp in _vm.CurrentChartData)
-            {
-                if (dp.IsLimit || !_vm.IsChartSeriesVisible(dp.SeriesName)) continue;
-                double dx = (dp.ExpectValue - dataX) * xScale;
-                double dy = (dp.Difference - dataY) * yScale;
-                double dist = Math.Sqrt(dx * dx + dy * dy);
-                if (dist < nearestDist)
-                {
-                    nearestDist = dist;
-                    nearest = dp;
-                }
-            }
+            var nearest = _vm.FindNearestChartPoint(dataX, dataY, xScale, yScale, out var nearestDist);
 
             if (nearest == null || nearestDist > 25)
             {
@@ -202,21 +267,7 @@ public partial class MainWindow : Window
             if (!TryGetChartPointerData(e, out _, out var dataX, out var dataY, out var xScale, out var yScale))
                 return;
 
-            TooltipDataPoint? nearest = null;
-            double nearestDist = double.MaxValue;
-
-            foreach (var dp in _vm.CurrentChartData)
-            {
-                if (dp.IsLimit || !_vm.IsChartSeriesVisible(dp.SeriesName)) continue;
-                double dx = (dp.ExpectValue - dataX) * xScale;
-                double dy = (dp.Difference - dataY) * yScale;
-                double dist = Math.Sqrt(dx * dx + dy * dy);
-                if (dist < nearestDist)
-                {
-                    nearestDist = dist;
-                    nearest = dp;
-                }
-            }
+            var nearest = _vm.FindNearestChartPoint(dataX, dataY, xScale, yScale, out var nearestDist);
 
             if (nearest == null || nearestDist > 25 || nearest.RowIndex < 0)
                 return;
@@ -267,10 +318,8 @@ public partial class MainWindow : Window
             position.Y < plotTop || position.Y > plotBottom)
             return false;
 
-        var xMin = _vm.CurrentChartData.Min(d => d.ExpectValue);
-        var xMax = _vm.CurrentChartData.Max(d => d.ExpectValue);
-        var yMin = _vm.CurrentChartData.Min(d => d.Difference);
-        var yMax = _vm.CurrentChartData.Max(d => d.Difference);
+        if (!_vm.TryGetChartBounds(out var xMin, out var xMax, out var yMin, out var yMax))
+            return false;
         var xPadding = (xMax - xMin) * 0.05;
         var yPadding = (yMax - yMin) * 0.05;
         if (xPadding == 0) xPadding = 0.5;
@@ -296,6 +345,20 @@ public partial class MainWindow : Window
         xScale = plotWidth / xRange;
         yScale = plotHeight / yRange;
         return true;
+    }
+
+    private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!ReferenceEquals(e.Source, MainTabControl)) return;
+        UpdateDiagnosticsActiveState();
+    }
+
+    private void UpdateDiagnosticsActiveState()
+    {
+        if (DataContext is not MainViewModel viewModel || DiagnosticsTab == null) return;
+        var diagnosticsIndex = MainTabControl.Items.IndexOf(DiagnosticsTab);
+        var isFloating = diagnosticsIndex >= 0 && _floatingWindows.ContainsKey(diagnosticsIndex);
+        viewModel.SetDiagnosticsActive(ReferenceEquals(MainTabControl.SelectedItem, DiagnosticsTab) || isFloating);
     }
 
     private readonly Dictionary<int, Window> _floatingWindows = new();
@@ -428,6 +491,7 @@ public partial class MainWindow : Window
         };
 
         _floatingWindows[tabIndex] = floatWin;
+        UpdateDiagnosticsActiveState();
 
         floatWin.Closed += (_, _) =>
         {
@@ -435,6 +499,7 @@ public partial class MainWindow : Window
             floatWin.Content = null;
             tabItem.Content = movedContent;
             _floatingWindows.Remove(tabIndex);
+            UpdateDiagnosticsActiveState();
         };
 
         floatWin.Show();

@@ -6,6 +6,7 @@ The installer is a self-contained Windows x64 MSI. It includes the .NET 9 Window
 
 ```powershell
 dotnet tool install --global wix --version 5.0.2
+wix extension add -g WixToolset.UI.wixext/5.0.2
 ```
 
 ## Build
@@ -16,7 +17,7 @@ powershell -ExecutionPolicy Bypass -File .\installer\Build-Installer.ps1
 
 Outputs:
 
-- `dist\SSTLogAnalyser-v1.2.0-win-x64.msi`
-- `dist\SSTLogAnalyser-v1.2.0-win-x64.msi.sha256`
+- `dist\SSTLogAnalyser-v1.2.1-win-x64.msi`
+- `dist\SSTLogAnalyser-v1.2.1-win-x64.msi.sha256`
 
-The MSI installs the application for the current user without requiring administrator rights. It creates Start menu and desktop shortcuts, and supports upgrades and uninstall through Windows Settings.
+The MSI defaults to the current user's local Programs directory, does not require administrator rights for that location, and lets the user choose another installation folder. It creates Start menu and desktop shortcuts, and supports upgrades and uninstall through Windows Settings.

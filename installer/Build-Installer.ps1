@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.2.0",
+    [string]$Version = "1.2.1",
     [string]$Configuration = "Release"
 )
 
@@ -10,6 +10,7 @@ $publishDir = Join-Path $repoRoot "artifacts\publish\win-x64"
 $distDir = Join-Path $repoRoot "dist"
 $installerPath = Join-Path $distDir "SSTLogAnalyser-v$Version-win-x64.msi"
 $wixSource = Join-Path $PSScriptRoot "Product.wxs"
+$wixUiSource = Join-Path $PSScriptRoot "InstallerUI.wxs"
 
 New-Item -ItemType Directory -Force -Path $publishDir, $distDir | Out-Null
 
@@ -39,7 +40,8 @@ if (-not $wixVersion.StartsWith("5.")) {
     throw "WiX Toolset 5.x is required. Found: $wixVersion"
 }
 
-& $wixExe build $wixSource `
+& $wixExe build $wixSource $wixUiSource `
+    -ext WixToolset.UI.wixext `
     -arch x64 `
     -d "AppVersion=$Version" `
     -d "PublishDir=$publishDir" `
