@@ -196,9 +196,11 @@ LoadedFiles → AvailableModules (distinct module types)
 SelectedModule → AvailableChannels, AvailableTestItems, AvailableLoops
 SelectedChannels → AvailableTestItems (filtered by selected channels)
 SelectedTestItem → AvailableLoops (further filtered)
-SearchText → AvailableTestItems (substring filter)
+Channel finder → Select matching channel + scroll into view + update 128-channel page
 SelectedChannels + SelectedLoops → QueryTestResults → UpdateChart
 ```
+
+The Channel finder accepts a numeric ID with optional `CH` or `Channel` prefix. It is a navigation action rather than a data filter, so its text never filters Test Items or Diagnostics queries.
 
 For MIXI (AWG/DTZ), selecting a channel filters the test item list to only show items belonging to that channel, since AWG and DTZ channels have distinct test item sets.
 

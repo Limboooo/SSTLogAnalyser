@@ -85,9 +85,8 @@ dotnet run
 │  过滤    │              数据标签页                           │
 │  面板    │  ┌──────────────────────────────────────────┐    │
 │          │  │ Chart │ Pass/Fail │ Data │ Stats │ Errors │ Dev │
-│ · 搜索   │  │                                          │    │
 │ · 模块   │  │         （当前选中标签页内容）              │    │
-│ · 通道   │  │                                          │    │
+│ · 通道定位│  │                                          │    │
 │ · 测试项 │  │                                          │    │
 │ · 循环   │  │                                          │    │
 │ · 对比模式│  │                                          │    │
@@ -176,14 +175,6 @@ Loop Index（循环序号）
 
 ### 各过滤器说明
 
-#### Search（搜索）
-
-在测试项名称中搜索关键词，支持部分匹配。
-
-**示例：**
-- 输入 `voltage` → 匹配所有包含 "voltage" 的测试项
-- 输入 `cal` → 匹配 "Calibration", "Recal" 等
-
 #### Module Type（模块类型）
 
 选择要查看的模块类型。不同模块的测试数据独立存储。
@@ -201,6 +192,8 @@ Loop Index（循环序号）
 选择具体的通道。支持多选（按住 Ctrl 或 Shift）。
 
 **提示：**
+- 在 Channel 定位框中输入 `36`、`CH36` 或 `Channel 36`，按 Enter 或点击搜索图标，即可选中该 Channel 并滚动到对应位置。
+- Channel 定位只改变当前 Channel 选择，不会过滤 Test Item 名称或 Diagnostics 数据。
 - 点击 **ALL** 会清除列表选择，并显示所有通道。
 - 通道数量较多时，使用 ALL 右侧的上一页/下一页按钮可一次选择 128 个 Channel；旁边会显示当前范围和总数，例如 `129-256 / 2048`。
 - 切换通道时，如果原 Test Item 在新选择中仍然有效，程序会保留该 Test Item，无需重复选择。
@@ -260,6 +253,8 @@ Loop Index（循环序号）
 ## 图表查看
 
 Chart 标签页是核心可视化界面，展示校准数据的 Expected vs Difference 关系。
+
+点击图表右上角的保存图标可将当前画面导出为 PNG。导出内容会保留当前缩放范围、曲线聚焦状态、过滤结果、摘要以及当前可见的 Legend；操作按钮不会出现在图片中。默认文件名为 `TestItem - Module - CH - yyyyMMdd-HHmmss.png`，保存对话框允许修改文件名和目标目录。
 
 ### 图表组成
 
@@ -342,6 +337,8 @@ Chart 标签页是核心可视化界面，展示校准数据的 Expected vs Diff
 ## Diagnostics 诊断
 
 Diagnostics 位于 Chart 后面，使用当前 Module、Channel、Test Item 和 Loop 过滤条件生成四张校准诊断图。四张图都支持滚轮缩放；点击标题旁的放大按钮可单独占满诊断区域，再次点击即可恢复四宫格。点击 Diagnostics 标签旁的 **[+]** 可以把整个诊断页弹出为独立窗口。
+
+每张诊断图标题旁都有保存图标，可将该面板当前显示的摘要、筛选状态和图表保存为 PNG。Gain / Offset 会将上下两张分布图作为一个面板一起保存。
 
 Diagnostics 只在标签页可见或处于独立浮窗时刷新。Residual 和 POS-NEG 图在数据量较大时只绘制风险最高的 20 组原始曲线；热力图由数据库直接计算每个 Channel/Test Item 的最坏结果，避免加载全部原始行。
 

@@ -28,7 +28,6 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private string? _selectedModule;
     [ObservableProperty] private string? _selectedTestItem;
-    [ObservableProperty] private string _searchText = string.Empty;
     [ObservableProperty] private bool _compareMultiChannel = true;
     [ObservableProperty] private bool _compareMultiLoop;
     [ObservableProperty] private bool _showLegend = true;
@@ -319,7 +318,6 @@ public partial class MainViewModel : ObservableObject
     {
         if (_diagnosticsActive) UpdateCoefficientCharts();
     }
-    partial void OnSearchTextChanged(string value) { RefreshTestItems(); UpdateChart(); UpdateDiagnostics(); }
     partial void OnCompareMultiChannelChanged(bool value) { if (value) CompareMultiLoop = false; UpdateChart(); }
     partial void OnCompareMultiLoopChanged(bool value) { if (value) CompareMultiChannel = false; UpdateChart(); }
     partial void OnPerformanceModeChanged(bool value) { UpdateChart(); }
@@ -346,10 +344,7 @@ public partial class MainViewModel : ObservableObject
         if (fileIds.Length == 0) return;
         var selectedTestItem = SelectedTestItem;
         var channels = SelectedChannels.Count > 0 ? SelectedChannels.ToArray() : null;
-        var testItems = _cache.GetDistinctTestItems(fileIds, SelectedModule, channels)
-            .Where(t => string.IsNullOrEmpty(SearchText) ||
-                        t.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        var testItems = _cache.GetDistinctTestItems(fileIds, SelectedModule, channels);
 
         SynchronizeTestItems(testItems);
 
@@ -568,8 +563,7 @@ public partial class MainViewModel : ObservableObject
     {
         var channels = SelectedChannels.Count > 0 ? SelectedChannels.ToArray() : null;
         var loops = SelectedLoops.Count > 0 ? SelectedLoops.ToArray() : null;
-        var search = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText;
-        var cells = _cache.QueryToleranceCells(fileIds, SelectedModule, channels, loops, search);
+        var cells = _cache.QueryToleranceCells(fileIds, SelectedModule, channels, loops);
 
         if (cells.Count == 0)
         {

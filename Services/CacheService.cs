@@ -461,13 +461,12 @@ public class CacheService : IDisposable
     }
 
     public List<TestResult> QueryTestResults(long[] fileIds, string? moduleType, string? testItem,
-        int[]? channels, int[]? loops, string? search = null)
+        int[]? channels, int[]? loops)
     {
         using var cmd = _connection.CreateCommand();
         var where = BuildFileIdWhere(fileIds);
         if (moduleType != null) where += " AND module_type = @mod";
         if (testItem != null) where += " AND test_item_name = @test";
-        if (search != null) where += " AND test_item_name LIKE @search";
         if (channels != null && channels.Length > 0)
         {
             var channelParams = string.Join(",", channels.Select((_, i) => "@queryChannel" + i));
@@ -485,7 +484,6 @@ public class CacheService : IDisposable
         cmd.CommandText = "SELECT file_id, loop_index, module_type, slot_number, channel_id, test_item_name, expect_value, measure_value, low_limit, up_limit, difference_value, is_failed, is_retest, line_number, wave_value, offset_value, diff_value, component_type FROM test_results WHERE " + where + " ORDER BY loop_index, channel_id, expect_value";
         if (moduleType != null) cmd.Parameters.AddWithValue("@mod", moduleType);
         if (testItem != null) cmd.Parameters.AddWithValue("@test", testItem);
-        if (search != null) cmd.Parameters.AddWithValue("@search", "%" + search + "%");
         AddFileIdParams(cmd, fileIds);
 
         var list = new List<TestResult>();
@@ -499,13 +497,11 @@ public class CacheService : IDisposable
         long[] fileIds,
         string? moduleType,
         int[]? channels,
-        int[]? loops,
-        string? search = null)
+        int[]? loops)
     {
         using var cmd = _connection.CreateCommand();
         var where = BuildFileIdWhere(fileIds);
         if (moduleType != null) where += " AND module_type = @mod";
-        if (search != null) where += " AND test_item_name LIKE @search";
         if (channels != null && channels.Length > 0)
         {
             var channelParams = string.Join(",", channels.Select((_, index) => "@cellChannel" + index));
@@ -533,7 +529,6 @@ public class CacheService : IDisposable
             GROUP BY channel_id, test_item_name
             ORDER BY channel_id, test_item_name";
         if (moduleType != null) cmd.Parameters.AddWithValue("@mod", moduleType);
-        if (search != null) cmd.Parameters.AddWithValue("@search", "%" + search + "%");
         AddFileIdParams(cmd, fileIds);
 
         var cells = new List<ToleranceCell>();

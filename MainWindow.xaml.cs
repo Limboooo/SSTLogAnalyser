@@ -1,7 +1,11 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using Microsoft.Win32;
 using SSTLogAnalyser.ViewModels;
 
 namespace SSTLogAnalyser;
@@ -55,6 +59,66 @@ public partial class MainWindow : Window
     }
 
     private void AllChannels_Click(object sender, RoutedEventArgs e) => SelectAllChannels();
+
+    private void FindChannel_Click(object sender, RoutedEventArgs e) => FindChannel();
+
+    private void ChannelSearchBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        FindChannel();
+        e.Handled = true;
+    }
+
+    private void FindChannel()
+    {
+        var searchText = ChannelSearchBox.Text;
+        if (!TryParseChannelSearch(searchText, out var channel))
+        {
+            _vm.StatusText = "Enter a valid channel number, for example 36 or CH36.";
+            ChannelSearchBox.SelectAll();
+            ChannelSearchBox.Focus();
+            return;
+        }
+
+        var channelIndex = _vm.AvailableChannels.IndexOf(channel);
+        if (channelIndex < 0)
+        {
+            _vm.StatusText = $"Channel {channel} was not found in the current module.";
+            ChannelSearchBox.SelectAll();
+            ChannelSearchBox.Focus();
+            return;
+        }
+
+        _channelPageStartIndex = (channelIndex / ChannelPageSize) * ChannelPageSize;
+        _suppressChannelSelectionChanged = true;
+        try
+        {
+            ChannelList.UnselectAll();
+            ChannelList.SelectedItem = channel;
+        }
+        finally
+        {
+            _suppressChannelSelectionChanged = false;
+        }
+
+        _vm.SetSelectedChannels([channel]);
+        ChannelList.UpdateLayout();
+        ChannelList.ScrollIntoView(channel);
+        UpdateChannelPageText();
+        _vm.StatusText = $"Selected Channel {channel}.";
+    }
+
+    internal static bool TryParseChannelSearch(string? value, out int channel)
+    {
+        var text = value?.Trim() ?? string.Empty;
+        if (text.StartsWith("Channel", StringComparison.OrdinalIgnoreCase))
+            text = text["Channel".Length..].Trim();
+        else if (text.StartsWith("CH", StringComparison.OrdinalIgnoreCase))
+            text = text[2..].Trim();
+
+        text = text.TrimStart('#', ':').Trim();
+        return int.TryParse(text, out channel);
+    }
 
     private void PreviousChannelPage_Click(object sender, RoutedEventArgs e) =>
         SelectChannelPage(_channelPageStartIndex - ChannelPageSize);
@@ -364,6 +428,105 @@ public partial class MainWindow : Window
     private readonly Dictionary<int, Window> _floatingWindows = new();
     private static readonly string[] TabNames = { "Chart", "Diagnostics", "Pass/Fail Matrix", "Data", "Statistics", "Errors / FATAL", "Device Info" };
     private string? _expandedDiagnosticPanel;
+
+    private void SaveChartImage_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not string chartKey) return;
+
+        var (target, fileLabel) = chartKey switch
+        {
+            "Chart" => (MainChartCaptureArea, "Chart"),
+            "Tolerance" => (ToleranceHeatmapCaptureArea, "Tolerance-Heatmap"),
+            "Coefficient" => (CoefficientDistributionCaptureArea, "Gain-Offset"),
+            "Residual" => (ResidualSignatureCaptureArea, "Residual-Signature"),
+            "Symmetry" => (SymmetryCaptureArea, "POS-NEG-Symmetry"),
+            _ => ((FrameworkElement?)null, string.Empty)
+        };
+        if (target == null || target.ActualWidth <= 0 || target.ActualHeight <= 0) return;
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Save chart image",
+            Filter = "PNG image (*.png)|*.png",
+            DefaultExt = ".png",
+            AddExtension = true,
+            OverwritePrompt = true,
+            FileName = BuildChartImageFileName(chartKey, fileLabel)
+        };
+
+        var owner = Window.GetWindow(button) ?? this;
+        if (dialog.ShowDialog(owner) != true) return;
+
+        var actionButtonsOpacity = ChartActionButtons.Opacity;
+        try
+        {
+            if (chartKey == "Chart") ChartActionButtons.Opacity = 0;
+            target.UpdateLayout();
+            Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+            SaveElementAsPng(target, dialog.FileName);
+            _vm.StatusText = "Chart image saved: " + dialog.FileName;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(owner, "Unable to save the chart image.\n\n" + ex.Message,
+                "Save chart image", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            ChartActionButtons.Opacity = actionButtonsOpacity;
+        }
+    }
+
+    private string BuildChartImageFileName(string chartKey, string fallbackTestItem)
+    {
+        var testItem = _vm.SelectedTestItem;
+        if (string.IsNullOrWhiteSpace(testItem) && chartKey == "Coefficient")
+            testItem = _vm.SelectedCoefficientName;
+
+        var testItemPart = SanitizeFileNamePart(testItem ?? fallbackTestItem, 80);
+        var modulePart = SanitizeFileNamePart(_vm.SelectedModule ?? "All Modules", 40);
+        var channelPart = BuildChannelFileNamePart();
+        return $"{testItemPart} - {modulePart} - {channelPart} - {DateTime.Now:yyyyMMdd-HHmmss}.png";
+    }
+
+    private string BuildChannelFileNamePart()
+    {
+        var channels = _vm.SelectedChannels;
+        if (channels.Count == 0) return "CH-ALL";
+        if (channels.Count <= 6) return string.Join("+", channels.Select(channel => $"CH{channel}"));
+        return $"CH{channels[0]}-CH{channels[^1]} ({channels.Count}CH)";
+    }
+
+    private static string SanitizeFileNamePart(string value, int maxLength)
+    {
+        var invalidCharacters = Path.GetInvalidFileNameChars();
+        var sanitized = new string(value
+            .Select(character => invalidCharacters.Contains(character) ? '_' : character)
+            .ToArray())
+            .Trim()
+            .TrimEnd('.');
+        if (string.IsNullOrWhiteSpace(sanitized)) sanitized = "Unknown";
+        return sanitized.Length <= maxLength ? sanitized : sanitized[..maxLength].TrimEnd();
+    }
+
+    private static void SaveElementAsPng(FrameworkElement element, string filePath)
+    {
+        var dpi = VisualTreeHelper.GetDpi(element);
+        var pixelWidth = Math.Max(1, (int)Math.Ceiling(element.ActualWidth * dpi.DpiScaleX));
+        var pixelHeight = Math.Max(1, (int)Math.Ceiling(element.ActualHeight * dpi.DpiScaleY));
+        var bitmap = new RenderTargetBitmap(
+            pixelWidth,
+            pixelHeight,
+            dpi.PixelsPerInchX,
+            dpi.PixelsPerInchY,
+            PixelFormats.Pbgra32);
+        bitmap.Render(element);
+
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = File.Create(filePath);
+        encoder.Save(stream);
+    }
 
     private void DiagnosticExpand_Click(object sender, RoutedEventArgs e)
     {

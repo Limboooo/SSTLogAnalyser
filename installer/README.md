@@ -17,7 +17,7 @@ powershell -ExecutionPolicy Bypass -File .\installer\Build-Installer.ps1
 
 Outputs:
 
-- `dist\SSTLogAnalyser-v1.2.1-win-x64.msi`
-- `dist\SSTLogAnalyser-v1.2.1-win-x64.msi.sha256`
+- `dist\SSTLogAnalyser-v1.2.3-win-x64.msi`
+- `dist\SSTLogAnalyser-v1.2.3-win-x64.msi.sha256`
 
 The MSI defaults to the current user's local Programs directory, does not require administrator rights for that location, and lets the user choose another installation folder. It creates Start menu and desktop shortcuts, and supports upgrades and uninstall through Windows Settings.

@@ -133,15 +133,13 @@
 
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="4">
-                    <GroupBox Header="Search">
-                        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Padding="4" FontSize="12"/>
-                    </GroupBox>
                     <GroupBox Header="Module Type">
                         <ListBox ItemsSource="{Binding AvailableModules}" SelectedItem="{Binding SelectedModule}" MaxHeight="120"/>
                     </GroupBox>
                     <GroupBox Header="Channels / Pins">
                         <Grid>
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
@@ -159,7 +157,24 @@
                                 <TextBlock x:Name="ChannelPageText" Text="0 / 0" Margin="6,0,0,0"
                                            VerticalAlignment="Center" FontSize="10" Foreground="#555"/>
                             </StackPanel>
-                            <ListBox x:Name="ChannelList" Grid.Row="1"
+                            <Grid Grid.Row="1" Margin="2,0,2,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="ChannelSearchBox" Height="24" Padding="5,2" FontSize="12"
+                                         VerticalContentAlignment="Center"
+                                         AutomationProperties.Name="Channel number"
+                                         ToolTip="Enter a channel number, for example 36 or CH36"
+                                         KeyDown="ChannelSearchBox_KeyDown"/>
+                                <Button Grid.Column="1" Width="28" Height="24" Margin="4,0,0,0" Padding="0"
+                                        AutomationProperties.Name="Find channel"
+                                        ToolTip="Find and select channel"
+                                        Click="FindChannel_Click">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE721;" FontSize="12"/>
+                                </Button>
+                            </Grid>
+                            <ListBox x:Name="ChannelList" Grid.Row="2"
                                      ItemsSource="{Binding AvailableChannels}"
                                      SelectionMode="Extended" MaxHeight="150"
                                      SelectionChanged="ChannelList_SelectionChanged"/>
@@ -213,7 +228,7 @@
                                     Click="DetachTab_Click" Tag="0"/>
                         </StackPanel>
                     </TabItem.Header>
-                    <Grid Margin="4">
+                    <Grid x:Name="MainChartCaptureArea" Margin="4">
                         <lvc:CartesianChart x:Name="MainChart"
                             PreviewMouseLeftButtonDown="MainChart_PreviewMouseLeftButtonDown"
                             PreviewMouseLeftButtonUp="MainChart_PreviewMouseLeftButtonUp"
@@ -237,12 +252,19 @@
                                        TextTrimming="CharacterEllipsis"/>
                         </Border>
                         <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8" Panel.ZIndex="5">
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <StackPanel x:Name="ChartActionButtons" Orientation="Horizontal" HorizontalAlignment="Right">
                                 <Button Content="Show all" Width="56" Height="22" FontSize="10" Margin="0,0,4,0"
                                         Background="#B0FFFFFF" BorderBrush="#AAA" Padding="0"
                                         Command="{Binding ShowAllSeriesCommand}"
                                         Visibility="{Binding HasSeriesFocus, Converter={StaticResource BoolToVis}}"
                                         ToolTip="Show all chart series"/>
+                                <Button Width="28" Height="22" FontSize="10" Margin="0,0,4,0"
+                                        Background="#B0FFFFFF" BorderBrush="#AAA" Padding="0"
+                                        Click="SaveChartImage_Click" Tag="Chart"
+                                        AutomationProperties.Name="Save current chart image"
+                                        ToolTip="Save the current chart as a PNG image">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE74E;" FontSize="11"/>
+                                </Button>
                                 <Button Content="Reset" Width="48" Height="22" FontSize="10" Margin="0,0,4,0"
                                         Background="#B0FFFFFF" BorderBrush="#AAA" Padding="0"
                                         Command="{Binding ResetChartZoomCommand}"
@@ -498,14 +520,20 @@
                             <GroupBox.Header>
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="Tolerance Utilization Heatmap" VerticalAlignment="Center"/>
-                                    <Button x:Name="ToleranceHeatmapExpandButton" Width="22" Height="18" Padding="0" Margin="6,0,0,0"
+                                    <Button Width="22" Height="18" Padding="0" Margin="6,0,0,0"
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                            AutomationProperties.Name="Save tolerance heatmap image"
+                                            ToolTip="Save chart as PNG" Click="SaveChartImage_Click" Tag="Tolerance">
+                                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE74E;" FontSize="11"/>
+                                    </Button>
+                                    <Button x:Name="ToleranceHeatmapExpandButton" Width="22" Height="18" Padding="0" Margin="2,0,0,0"
                                             Background="Transparent" BorderThickness="0" Cursor="Hand"
                                             ToolTip="Maximize chart" Click="DiagnosticExpand_Click" Tag="Tolerance">
                                         <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE740;" FontSize="11"/>
                                     </Button>
                                 </StackPanel>
                             </GroupBox.Header>
-                            <Grid>
+                            <Grid x:Name="ToleranceHeatmapCaptureArea">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="*"/>
@@ -531,14 +559,20 @@
                             <GroupBox.Header>
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="Gain / Offset Distribution" VerticalAlignment="Center"/>
-                                    <Button x:Name="CoefficientDistributionExpandButton" Width="22" Height="18" Padding="0" Margin="6,0,0,0"
+                                    <Button Width="22" Height="18" Padding="0" Margin="6,0,0,0"
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                            AutomationProperties.Name="Save gain and offset image"
+                                            ToolTip="Save chart as PNG" Click="SaveChartImage_Click" Tag="Coefficient">
+                                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE74E;" FontSize="11"/>
+                                    </Button>
+                                    <Button x:Name="CoefficientDistributionExpandButton" Width="22" Height="18" Padding="0" Margin="2,0,0,0"
                                             Background="Transparent" BorderThickness="0" Cursor="Hand"
                                             ToolTip="Maximize chart" Click="DiagnosticExpand_Click" Tag="Coefficient">
                                         <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE740;" FontSize="11"/>
                                     </Button>
                                 </StackPanel>
                             </GroupBox.Header>
-                            <Grid>
+                            <Grid x:Name="CoefficientDistributionCaptureArea">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="*"/>
@@ -577,14 +611,20 @@
                             <GroupBox.Header>
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="Residual Signature" VerticalAlignment="Center"/>
-                                    <Button x:Name="ResidualSignatureExpandButton" Width="22" Height="18" Padding="0" Margin="6,0,0,0"
+                                    <Button Width="22" Height="18" Padding="0" Margin="6,0,0,0"
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                            AutomationProperties.Name="Save residual signature image"
+                                            ToolTip="Save chart as PNG" Click="SaveChartImage_Click" Tag="Residual">
+                                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE74E;" FontSize="11"/>
+                                    </Button>
+                                    <Button x:Name="ResidualSignatureExpandButton" Width="22" Height="18" Padding="0" Margin="2,0,0,0"
                                             Background="Transparent" BorderThickness="0" Cursor="Hand"
                                             ToolTip="Maximize chart" Click="DiagnosticExpand_Click" Tag="Residual">
                                         <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE740;" FontSize="11"/>
                                     </Button>
                                 </StackPanel>
                             </GroupBox.Header>
-                            <Grid>
+                            <Grid x:Name="ResidualSignatureCaptureArea">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="*"/>
@@ -606,14 +646,20 @@
                             <GroupBox.Header>
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="MIXI / AWG POS-NEG Symmetry Mismatch" VerticalAlignment="Center"/>
-                                    <Button x:Name="SymmetryExpandButton" Width="22" Height="18" Padding="0" Margin="6,0,0,0"
+                                    <Button Width="22" Height="18" Padding="0" Margin="6,0,0,0"
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                            AutomationProperties.Name="Save POS-NEG symmetry image"
+                                            ToolTip="Save chart as PNG" Click="SaveChartImage_Click" Tag="Symmetry">
+                                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE74E;" FontSize="11"/>
+                                    </Button>
+                                    <Button x:Name="SymmetryExpandButton" Width="22" Height="18" Padding="0" Margin="2,0,0,0"
                                             Background="Transparent" BorderThickness="0" Cursor="Hand"
                                             ToolTip="Maximize chart" Click="DiagnosticExpand_Click" Tag="Symmetry">
                                         <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE740;" FontSize="11"/>
                                     </Button>
                                 </StackPanel>
                             </GroupBox.Header>
-                            <Grid>
+                            <Grid x:Name="SymmetryCaptureArea">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="*"/>
