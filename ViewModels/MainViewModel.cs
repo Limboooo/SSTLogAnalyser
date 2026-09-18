@@ -62,6 +62,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _symmetrySummary = "Select MIXI/AWG data to inspect POS/NEG symmetry.";
 
     public ObservableCollection<LogFileInfo> LoadedFiles { get; } = new();
+    public ObservableCollection<RunSummary> RunSummaries { get; } = new();
+    public ObservableCollection<RunFailedSlotRow> RunFailedSlots { get; } = new();
+    [ObservableProperty] private RunSummary? _selectedRunSummary;
+    [ObservableProperty] private string _runSummaryHeadline = "Load an SST_Summary or AUTOTEST_Result file to see the run outcome.";
     public ObservableCollection<string> AvailableModules { get; } = new();
     public ObservableCollection<int> AvailableChannels { get; } = new();
     public ObservableCollection<string> AvailableTestItems { get; } = new();
@@ -69,6 +73,8 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<int> SelectedChannels { get; } = new();
     public ObservableCollection<int> SelectedLoops { get; } = new();
     public ObservableCollection<ErrorLogEntry> ErrorEntries { get; } = new();
+    public ObservableCollection<DiagnosticObservation> DiagnosticObservations { get; } = new();
+    [ObservableProperty] private string _diagnosticObservationSummary = "Load a LOG file to see source-backed diagnostic events.";
     public ObservableCollection<DeviceInfo> DeviceEntries { get; } = new();
     public ObservableCollection<SystemInfo> SystemInfos { get; } = new();
     [ObservableProperty] private IReadOnlyList<StatEntry> _statistics = Array.Empty<StatEntry>();
@@ -257,6 +263,19 @@ public partial class MainViewModel : ObservableObject
             foreach (var path in paths)
             {
                 StatusText = "Processing: " + Path.GetFileName(path);
+                var fileName = Path.GetFileName(path);
+                if (fileName.StartsWith("SST_Summary_", StringComparison.OrdinalIgnoreCase) ||
+                    fileName.Equals("AUTOTEST_Result.txt", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!RunSummaries.Any(s => string.Equals(s.SourceFile, path, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var summary = RunSummaryParser.ParseFile(path);
+                        RunSummaries.Add(summary);
+                        SelectedRunSummary = summary;
+                    }
+                    StatusText = "Loaded run summary: " + fileName;
+                    continue;
+                }
                 var hash = await FileHashService.ComputeSha256Async(path);
                 var existingId = _cache.FindFileByHash(hash);
                 if (existingId.HasValue)
@@ -283,6 +302,8 @@ public partial class MainViewModel : ObservableObject
                     _cache.InsertCalibrationCoefficients(fileId, result.CalibrationCoefficients);
                 if (result.Devices.Count > 0) _cache.InsertDevices(fileId, result.Devices);
                 if (result.Errors.Count > 0) _cache.InsertErrors(fileId, result.Errors);
+                if (result.DiagnosticObservations.Count > 0)
+                    _cache.InsertDiagnosticObservations(fileId, result.DiagnosticObservations);
                 if (result.SystemInfos.Count > 0) _cache.InsertSystemInfos(fileId, result.SystemInfos);
                 LoadedFiles.Add(result.FileInfo);
                 StatusText = "Parsed: " + Path.GetFileName(path) + " (" + result.TestResults.Count + " data points)";
@@ -306,6 +327,21 @@ public partial class MainViewModel : ObservableObject
         UpdateChart();
         UpdateDiagnostics();
         RefreshSecondaryViews();
+    }
+    partial void OnSelectedRunSummaryChanged(RunSummary? value)
+    {
+        RunFailedSlots.Clear();
+        if (value == null)
+        {
+            RunSummaryHeadline = "Load an SST_Summary or AUTOTEST_Result file to see the run outcome.";
+            return;
+        }
+        foreach (var item in value.Items)
+            foreach (var slot in item.FailedSlots)
+                RunFailedSlots.Add(new RunFailedSlotRow(item.Name, slot.Slot, slot.BoardType, slot.Source.LineNumber));
+        var failed = value.Items.Count(i => i.Status == SummaryStatus.Failed || i.Status == SummaryStatus.Aborted);
+        var notTested = value.Items.Count(i => i.Status == SummaryStatus.NotTested);
+        RunSummaryHeadline = $"Overall: {value.OverallStatus}  |  Failed stages: {failed}  |  Not tested: {notTested}  |  Source: {Path.GetFileName(value.SourceFile)}";
     }
     partial void OnSelectedTestItemChanged(string? value)
     {
@@ -1232,6 +1268,11 @@ public partial class MainViewModel : ObservableObject
         var fileIds = LoadedFiles.Select(f => f.FileId).ToArray();
         if (fileIds.Length == 0) return;
         ErrorEntries.Clear(); foreach (var e in _cache.GetErrors(fileIds)) ErrorEntries.Add(e);
+        DiagnosticObservations.Clear();
+        foreach (var o in _cache.GetDiagnosticObservations(fileIds)) DiagnosticObservations.Add(o);
+        var failed = DiagnosticObservations.Count(o => o.Status.Equals("Fail", StringComparison.OrdinalIgnoreCase));
+        var passed = DiagnosticObservations.Count(o => o.Status.Equals("Pass", StringComparison.OrdinalIgnoreCase));
+        DiagnosticObservationSummary = $"{DiagnosticObservations.Count} observations; {failed} explicit failures, {passed} explicit passes. Unknown is not a failure.";
         DeviceEntries.Clear(); foreach (var d in _cache.GetDevices(fileIds)) DeviceEntries.Add(d);
         SystemInfos.Clear(); foreach (var s in _cache.GetSystemInfos(fileIds)) SystemInfos.Add(s);
         PassFailEntries.Clear();
@@ -1279,11 +1320,13 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ClearAll()
     {
+        RunSummaries.Clear(); RunFailedSlots.Clear(); SelectedRunSummary = null;
         LoadedFiles.Clear(); AvailableModules.Clear(); AvailableChannels.Clear();
         AvailableTestItems.Clear(); AvailableLoops.Clear();
         AvailableCoefficientNames.Clear();
         SelectedChannels.Clear(); SelectedLoops.Clear();
-        ErrorEntries.Clear(); DeviceEntries.Clear(); SystemInfos.Clear();
+        ErrorEntries.Clear(); DiagnosticObservations.Clear(); DeviceEntries.Clear(); SystemInfos.Clear();
+        DiagnosticObservationSummary = "Load a LOG file to see source-backed diagnostic events.";
         Statistics = Array.Empty<StatEntry>(); PassFailEntries.Clear(); LegendItems = Array.Empty<LegendItem>(); CurrentChartData.Clear(); ChartDataRows = Array.Empty<TestResult>(); SelectedChartRow = null;
         SelectedModule = null; SelectedTestItem = null;
         SelectedCoefficientName = null;
@@ -1313,6 +1356,8 @@ public partial class LegendItem : ObservableObject
     [ObservableProperty] private double _displayOpacity = 1;
     [ObservableProperty] private FontWeight _fontWeight = FontWeights.Normal;
 }
+
+public sealed record RunFailedSlotRow(string Stage, string Slot, string Board, int Line);
 
 public class TooltipDataPoint
 {

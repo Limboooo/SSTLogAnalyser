@@ -10,5 +10,13 @@ public enum ModuleType
     DPSI,
     AWG,
     DTZ,
-    MIXI
+    MIXI,
+    MVPI,
+    MDM,
+    HVI,
+    HVPI,
+    HDM,
+    MXVI,
+    AC,
+    TMU
 }

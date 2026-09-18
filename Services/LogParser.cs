@@ -10,8 +10,10 @@ public class LogParser
     private static readonly Regex TimestampRegex = new(@"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2},\d{3})\s+(INFO|ERROR|FATAL|WARN)\s+-\s*(.*)", RegexOptions.Compiled);
     private static readonly Regex LoopRegex = new(@"Index\s+(\d+)\s+of\s+(\d+)", RegexOptions.Compiled);
     private static readonly Regex VerificationHeaderRegex = new(@"^(Re-test\s+)?(\w+)\s+Channel\s+(\d+):\s*(.+?),\s*(.+)\s+Verification\s*$", RegexOptions.Compiled);
+    private static readonly Regex MvpiMeasureHeaderRegex = new(@"^(Re-test\s+)?MVPI\s+Channel\s+(\d+):\s*(.+\bMeasure\b.+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex CalibrationHeaderRegex = new(@"^(\w+)\s+Channel\s+(\d+):\s*(.+?)\s+Calibration\s*$", RegexOptions.Compiled);
     private static readonly Regex CoefficientRegex = new(@"^(\w+)\s+(.+?)\s+Gain:\s*([\d.\-Ee+]+),\s*Offset:\s*([\d.\-Ee+]+)", RegexOptions.Compiled);
+    private static readonly Regex ChannelCoefficientRegex = new(@"^(HDM|HVPI TMU)\s+Channel\s+(\d+):\s*Gain=([\d.\-Ee+]+),\s*Offset=([\d.\-Ee+]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex MixiCoefficientRegex = new(@"^(?:-+[^-]+-+\s+)?M/C\s+M\s*[:=]\s*([\d.\-Ee+]+)\s*[,;]?\s*C\s*[:=]\s*([\d.\-Ee+]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex MixiCoefficientSummaryRegex = new(@"^\w+\s+(AWG|DTZ)\s*(\d+)\s*,\s*([^,]+)\s*,\s*M\s*[:=]\s*([\d.\-Ee+]+)\s*,\s*C\s*[:=]\s*([\d.\-Ee+]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex PeVerificationRegex = new(@"^Pin:\s*(\d+)\s+the\s+(.+?)\s+Verification(?:\s+\([^)]+\))?:\s*(Pass|Fail)\.?\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -27,6 +29,8 @@ public class LogParser
     private static readonly Regex SoftwareNameRegex = new(@"SoftwareName:\s*(.+?)\s+FileVersion:\s*(.+)", RegexOptions.Compiled);
     private static readonly Regex MixiHeaderRegex = new(@"^(AWG|DTZ)\s+CH\s+(\d+)\s+(.+)$", RegexOptions.Compiled);
     private static readonly Regex MixiDataRegex = new(@"--(?<component>.+?)--\s+Target:[\d.\-Ee+]+.*?Meas:(?<measure>[\d.\-Ee+]+)\s+LowLimit:(?<low>[\d.\-Ee+]+)\s+HighLimit:(?<high>[\d.\-Ee+]+)\s+Meas-Target:(?<difference>[\d.\-Ee+]+)", RegexOptions.Compiled);
+    private static readonly Regex TmuSpecRegex = new(@"^Expect error between\s+([\d.\-Ee+]+)ns\s*~\s*([\d.\-Ee+]+)ns", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex TmuReferenceRegex = new(@"^Ref TestTime ActualValue\s*=\s*([\d.\-Ee+]+)ns", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public async Task<ParseResult> ParseAsync(string filePath, IProgress<ParseProgress>? progress = null, CancellationToken ct = default)
     {
@@ -54,6 +58,9 @@ public class LogParser
         int mixiChannel = 0;
         string? currentCalibrationItem = null;
         string? currentPpmuTestHeader = null;
+        string[]? acColumns = null;
+        string[]? tmuColumns = null;
+        double? tmuSpecLow = null, tmuSpecHigh = null, tmuReference = null;
 
         using var reader = new StreamReader(filePath);
         int lineNumber = 0;
@@ -85,6 +92,48 @@ public class LogParser
                 message = line.Trim();
             }
 
+            if (DiagnosticLogParser.TryParse(message, currentTimestamp, lineNumber, currentLoop, out var observation))
+                result.DiagnosticObservations.Add(observation);
+
+            // AC SummaryReport and TMU Path Verification both write comma tables outside DC blocks.
+            if (message.Contains("Start TMU Path Verification", StringComparison.OrdinalIgnoreCase))
+            {
+                tmuColumns = null;
+                tmuSpecLow = tmuSpecHigh = tmuReference = null;
+            }
+            if (message.StartsWith("#PinNum", StringComparison.OrdinalIgnoreCase) &&
+                message.Contains("Target(ns)", StringComparison.OrdinalIgnoreCase) &&
+                message.Contains("Result", StringComparison.OrdinalIgnoreCase))
+            {
+                acColumns = ParseCsvFields(message.TrimStart('#'));
+                tmuColumns = null;
+                continue;
+            }
+            if (message.StartsWith("PinNum,", StringComparison.OrdinalIgnoreCase) &&
+                message.Contains("Tmu0_", StringComparison.OrdinalIgnoreCase) &&
+                message.Contains("VerifyResult", StringComparison.OrdinalIgnoreCase))
+            {
+                tmuColumns = ParseCsvFields(message);
+                acColumns = null;
+                continue;
+            }
+            var tmuSpecMatch = TmuSpecRegex.Match(message);
+            if (tmuSpecMatch.Success)
+            {
+                tmuSpecLow = ParseDouble(tmuSpecMatch.Groups[1].Value);
+                tmuSpecHigh = ParseDouble(tmuSpecMatch.Groups[2].Value);
+            }
+            var tmuReferenceMatch = TmuReferenceRegex.Match(message);
+            if (tmuReferenceMatch.Success)
+                tmuReference = ParseDouble(tmuReferenceMatch.Groups[1].Value);
+            if (acColumns != null && TryParseAcRow(message, acColumns, currentLoop, lineNumber, currentTimestamp, result.TestResults))
+                continue;
+            if (tmuColumns != null && TryParseTmuRow(message, tmuColumns, currentLoop, lineNumber,
+                    currentTimestamp, tmuReference, tmuSpecLow, tmuSpecHigh, result.TestResults))
+                continue;
+            if (acColumns != null && !string.IsNullOrWhiteSpace(message) && !char.IsDigit(message[0])) acColumns = null;
+            if (tmuColumns != null && !string.IsNullOrWhiteSpace(message) && !char.IsDigit(message[0])) tmuColumns = null;
+
             var loopMatch = LoopRegex.Match(message);
             if (loopMatch.Success)
             {
@@ -108,6 +157,20 @@ public class LogParser
                 string testName = verMatch.Groups[5].Value.Trim();
                 currentModule = ParseModuleType(moduleStr);
                 currentTestHeader = FormatTestItemName(rangeInfo, testName);
+                columnNames = null;
+                inDataBlock = true;
+                continue;
+            }
+
+            // The paired MVPI ADC table is headed "MVPI Channel N: <item with Measure>"
+            // without the usual trailing "Verification" token.
+            var mvpiMeasureMatch = MvpiMeasureHeaderRegex.Match(message);
+            if (mvpiMeasureMatch.Success && !message.Contains("Calibration", StringComparison.OrdinalIgnoreCase))
+            {
+                isReTest = mvpiMeasureMatch.Groups[1].Success;
+                currentModule = ModuleType.MVPI;
+                currentChannel = int.Parse(mvpiMeasureMatch.Groups[2].Value);
+                currentTestHeader = mvpiMeasureMatch.Groups[3].Value.Trim();
                 columnNames = null;
                 inDataBlock = true;
                 continue;
@@ -175,6 +238,24 @@ public class LogParser
                     });
                     continue;
                 }
+            }
+
+            var channelCoefficientMatch = ChannelCoefficientRegex.Match(message);
+            if (channelCoefficientMatch.Success)
+            {
+                var module = channelCoefficientMatch.Groups[1].Value.Equals("HDM", StringComparison.OrdinalIgnoreCase)
+                    ? ModuleType.HDM : ModuleType.HVPI;
+                AddOrUpdateCalibrationCoefficient(result, new CalibrationCoefficient
+                {
+                    LoopIndex = currentLoop, ModuleType = module,
+                    ChannelId = int.Parse(channelCoefficientMatch.Groups[2].Value),
+                    CalibrationItem = module == ModuleType.HDM ? "HDM Calibration" : "HVPI TMU Calibration",
+                    CoefficientName = module == ModuleType.HDM ? "HDM" : "TMU",
+                    Gain = ParseDouble(channelCoefficientMatch.Groups[3].Value),
+                    Offset = ParseDouble(channelCoefficientMatch.Groups[4].Value),
+                    LineNumber = lineNumber
+                });
+                continue;
             }
 
             var mixiCoefficientSummaryMatch = MixiCoefficientSummaryRegex.Match(message);
@@ -279,7 +360,7 @@ public class LogParser
                     {
                         LoopIndex = currentLoop,
                         ModuleType = ModuleType.MIXI,
-                        SlotNumber = 0,
+                        SlotNumber = -1,
                         ChannelId = mixiChannel,
                         TestItemName = mixiTestItem,
                         ExpectValue = target,
@@ -290,6 +371,7 @@ public class LogParser
                         IsFailed = isFailed,
                         IsReTest = false,
                         LineNumber = lineNumber,
+                        Timestamp = currentTimestamp,
                         WaveValue = waveValue,
                         OffsetValue = offsetValue,
                         DiffValue = diff,
@@ -322,7 +404,7 @@ public class LogParser
             if (inDataBlock && columnNames != null && message.StartsWith(","))
             {
                 var tr = ParseDataRow(message, columnNames, currentLoop, currentModule, currentChannel,
-                    currentTestHeader ?? "Unknown", isReTest, lineNumber);
+                    currentTestHeader ?? "Unknown", isReTest, lineNumber, currentTimestamp);
                 if (tr != null)
                     result.TestResults.Add(tr);
                 continue;
@@ -408,6 +490,12 @@ public class LogParser
             "AWG" => ModuleType.AWG,
             "DTZ" => ModuleType.DTZ,
             "MIXI" => ModuleType.MIXI,
+            "MVPI" => ModuleType.MVPI,
+            "MDM" => ModuleType.MDM,
+            "HVI" => ModuleType.HVI,
+            "HVPI" => ModuleType.HVPI,
+            "HDM" => ModuleType.HDM,
+            "MXVI" => ModuleType.MXVI,
             _ => ModuleType.Unknown
         };
     }
@@ -462,8 +550,90 @@ public class LogParser
         return trimmed.Split(',').Select(f => f.Trim()).Where(f => f.Length > 0).ToArray();
     }
 
+    private static bool TryParseAcRow(string message, string[] columns, int loop, int line,
+        string timestamp, List<TestResult> results)
+    {
+        var cells = message.Trim().TrimEnd(',').Split(',').Select(x => x.Trim()).ToArray();
+        if (cells.Length < columns.Length || !int.TryParse(cells[0], out var pin)) return false;
+        int targetIndex = Array.FindIndex(columns, c => c.Equals("Target(ns)", StringComparison.OrdinalIgnoreCase));
+        int specIndex = Array.FindIndex(columns, c => c.Equals("Spec(ns)", StringComparison.OrdinalIgnoreCase));
+        int maxIndex = Array.FindIndex(columns, c => c.Equals("MaxError(ns)", StringComparison.OrdinalIgnoreCase));
+        int resultIndex = Array.FindIndex(columns, c => c.Equals("Result", StringComparison.OrdinalIgnoreCase));
+        if (targetIndex < 1 || specIndex < 0 || maxIndex < 0 || resultIndex < 0 ||
+            !TryNumber(cells[targetIndex], out var target) || !TryNumber(cells[specIndex], out var spec)) return false;
+
+        for (int i = 1; i < targetIndex; i++)
+        {
+            if (!TryNumber(cells[i], out var measure)) continue; // NA is not a measurement.
+            var error = measure - target;
+            results.Add(new TestResult
+            {
+                LoopIndex = loop, ModuleType = ModuleType.AC, SlotNumber = -1, ChannelId = pin,
+                TestItemName = "AC " + columns[i].Trim(), ExpectValue = target,
+                MeasureValue = measure, LowLimit = -spec, UpLimit = spec,
+                Difference = error, IsFailed = Math.Abs(error) > spec,
+                HasExplicitResult = false, LineNumber = line, Timestamp = timestamp
+            });
+        }
+
+        // Result is the source's whole-pin verdict; it does not identify which edge failed.
+        var verdict = cells[resultIndex].Trim().Trim('*', '.', ';');
+        if (TryNumber(cells[maxIndex], out var maxError) &&
+            (verdict.Equals("Pass", StringComparison.OrdinalIgnoreCase) ||
+             verdict.Equals("Fail", StringComparison.OrdinalIgnoreCase)))
+        {
+            results.Add(new TestResult
+            {
+                LoopIndex = loop, ModuleType = ModuleType.AC, SlotNumber = -1, ChannelId = pin,
+                TestItemName = "AC Pin Overall (ns)", ExpectValue = 0, MeasureValue = maxError,
+                LowLimit = 0, UpLimit = spec, Difference = maxError,
+                IsFailed = verdict.Equals("Fail", StringComparison.OrdinalIgnoreCase),
+                HasExplicitResult = true, LineNumber = line, Timestamp = timestamp
+            });
+        }
+        return true;
+    }
+
+    private static bool TryParseTmuRow(string message, string[] columns, int loop, int line,
+        string timestamp, double? reference, double? low, double? high, List<TestResult> results)
+    {
+        var cells = message.Trim().TrimEnd(',').Split(',').Select(x => x.Trim()).ToArray();
+        if (cells.Length < columns.Length - 1 || !int.TryParse(cells[0], out var pin)) return false;
+        for (int i = 1; i < columns.Length - 1; i++)
+        {
+            if (!TryNumber(cells[i], out var measure)) continue;
+            var diff = reference.HasValue ? measure - reference.Value : 0;
+            results.Add(new TestResult
+            {
+                LoopIndex = loop, ModuleType = ModuleType.TMU, SlotNumber = -1, ChannelId = pin,
+                TestItemName = "TMU Path " + columns[i] + " (ns)",
+                ExpectValue = reference ?? 0, MeasureValue = measure,
+                LowLimit = low ?? 0,
+                UpLimit = high ?? 0,
+                Difference = diff, IsFailed = reference.HasValue && low.HasValue && high.HasValue &&
+                    (diff < low.Value || diff > high.Value),
+                HasExplicitResult = false, LineNumber = line, Timestamp = timestamp
+            });
+        }
+        // SST appends only "false;" to failed pins; an empty field is not an explicit PASS.
+        if (cells.Length >= columns.Length && cells[columns.Length - 1].TrimEnd(';')
+                .Equals("false", StringComparison.OrdinalIgnoreCase))
+        {
+            results.Add(new TestResult
+            {
+                LoopIndex = loop, ModuleType = ModuleType.TMU, SlotNumber = -1, ChannelId = pin,
+                TestItemName = "TMU Path Overall", IsFailed = true,
+                HasExplicitResult = true, LineNumber = line, Timestamp = timestamp
+            });
+        }
+        return true;
+    }
+
+    private static bool TryNumber(string value, out double number) =>
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number);
+
     private TestResult? ParseDataRow(string line, string[] columnNames, int loopIndex,
-        ModuleType moduleType, int channelId, string testItemName, bool isReTest, int lineNumber)
+        ModuleType moduleType, int channelId, string testItemName, bool isReTest, int lineNumber, string timestamp)
     {
         try
         {
@@ -482,6 +652,7 @@ public class LogParser
             parts = filteredParts;
 
             double expect, measure, lowLimit, upLimit, difference;
+            double? adcMeasure = null;
             int actualChannel = channelId;
 
             bool hasPin = columnNames.Length > 0 && columnNames[0].StartsWith("Pin", StringComparison.OrdinalIgnoreCase);
@@ -517,6 +688,7 @@ public class LogParser
                     return null;
                 expect = ParseDouble(parts[0]);
                 measure = ParseDouble(parts[1]);
+                adcMeasure = ParseDouble(parts[adcCol]);
                 lowLimit = ParseDouble(parts[lowIdx]);
                 upLimit = ParseDouble(parts[upIdx]);
                 difference = ParseDouble(parts[diffIdx]);
@@ -553,7 +725,7 @@ public class LogParser
             {
                 LoopIndex = loopIndex,
                 ModuleType = moduleType,
-                SlotNumber = 0,
+                SlotNumber = -1,
                 ChannelId = actualChannel,
                 TestItemName = testItemName,
                 ExpectValue = expect,
@@ -563,7 +735,10 @@ public class LogParser
                 Difference = difference,
                 IsFailed = isFailed,
                 IsReTest = isReTest,
-                LineNumber = lineNumber
+                LineNumber = lineNumber,
+                Timestamp = timestamp,
+                AdcMeasureValue = adcMeasure,
+                HasExplicitResult = lastField.Equals("Failed", StringComparison.OrdinalIgnoreCase)
             };
         }
         catch
@@ -640,6 +815,7 @@ public class ParseResult
     public List<ErrorLogEntry> Errors { get; set; } = new();
     public List<SystemInfo> SystemInfos { get; set; } = new();
     public List<CalibrationCoefficient> CalibrationCoefficients { get; set; } = new();
+    public List<DiagnosticObservation> DiagnosticObservations { get; set; } = new();
 }
 
 public record ParseProgress(int Percent, int LinesRead, int DataPoints);

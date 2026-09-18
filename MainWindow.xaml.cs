@@ -25,6 +25,10 @@ public partial class MainWindow : Window
         MainTabControl.Items.Remove(DiagnosticsTab);
         MainTabControl.Items.Insert(1, DiagnosticsTab);
         _vm = new MainViewModel();
+        _vm.RunSummaries.CollectionChanged += (_, _) =>
+        {
+            if (_vm.RunSummaries.Count > 0) MainTabControl.SelectedItem = RunSummaryTab;
+        };
         _vm.AvailableChannels.CollectionChanged += (_, _) =>
         {
             _channelPageStartIndex = 0;

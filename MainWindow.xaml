@@ -391,14 +391,18 @@
                             <DataGridTextColumn Header="File" Binding="{Binding FileId}" Width="50"/>
                             <DataGridTextColumn Header="Loop" Binding="{Binding LoopIndex}" Width="50"/>
                             <DataGridTextColumn Header="Module" Binding="{Binding ModuleType}" Width="70"/>
+                            <DataGridTextColumn Header="Slot (-1 unknown)" Binding="{Binding SlotNumber}" Width="100"/>
                             <DataGridTextColumn Header="Channel" Binding="{Binding ChannelId}" Width="60"/>
                             <DataGridTextColumn Header="Test Item" Binding="{Binding TestItemName}" Width="150"/>
                             <DataGridTextColumn Header="Expected" Binding="{Binding ExpectValue, StringFormat=G6}" Width="100"/>
                             <DataGridTextColumn Header="Measured" Binding="{Binding MeasureValue, StringFormat=G6}" Width="100"/>
+                            <DataGridTextColumn Header="ADC" Binding="{Binding AdcMeasureValue, StringFormat=G6}" Width="90"/>
                             <DataGridTextColumn Header="Difference" Binding="{Binding Difference, StringFormat=G6}" Width="100"/>
                             <DataGridTextColumn Header="Low Limit" Binding="{Binding LowLimit, StringFormat=G6}" Width="100"/>
                             <DataGridTextColumn Header="High Limit" Binding="{Binding UpLimit, StringFormat=G6}" Width="100"/>
                             <DataGridCheckBoxColumn Header="Failed" Binding="{Binding IsFailed}" Width="60"/>
+                            <DataGridCheckBoxColumn Header="SST result" Binding="{Binding HasExplicitResult}" Width="80"/>
+                            <DataGridTextColumn Header="Time" Binding="{Binding Timestamp}" Width="150"/>
                             <DataGridTextColumn Header="Line" Binding="{Binding LineNumber}" Width="70"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -492,6 +496,100 @@
                                 </DataGrid.Columns>
                             </DataGrid>
                         </GroupBox>
+                    </Grid>
+                </TabItem>
+                <TabItem x:Name="RunSummaryTab" Header="Run Summary">
+                    <Grid Margin="6">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="2*"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <ComboBox Grid.Row="0" ItemsSource="{Binding RunSummaries}"
+                                  SelectedItem="{Binding SelectedRunSummary}"
+                                  DisplayMemberPath="SourceFile" Margin="0,0,0,6"/>
+                        <TextBlock Grid.Row="1" Text="{Binding RunSummaryHeadline}"
+                                   TextWrapping="Wrap" Margin="0,0,0,6"/>
+                        <GroupBox Grid.Row="2" Header="Stages reported by SST" Margin="0,2">
+                            <DataGrid ItemsSource="{Binding SelectedRunSummary.Items}" AutoGenerateColumns="False"
+                                      IsReadOnly="True" AlternatingRowBackground="#F8F8F8">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Section" Binding="{Binding Section}" Width="140"/>
+                                    <DataGridTextColumn Header="Stage" Binding="{Binding Name}" Width="*"/>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding RawStatus}" Width="95"/>
+                                    <DataGridTextColumn Header="Failed slots" Binding="{Binding FailedSlots.Count}" Width="90"/>
+                                    <DataGridTextColumn Header="Line" Binding="{Binding Source.LineNumber}" Width="65"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </GroupBox>
+                        <GroupBox Grid.Row="3" Header="Failed slots" Margin="0,2">
+                            <DataGrid ItemsSource="{Binding RunFailedSlots}" AutoGenerateColumns="False" IsReadOnly="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Stage" Binding="{Binding Stage}" Width="*"/>
+                                    <DataGridTextColumn Header="Slot" Binding="{Binding Slot}" Width="80"/>
+                                    <DataGridTextColumn Header="Board" Binding="{Binding Board}" Width="120"/>
+                                    <DataGridTextColumn Header="Line" Binding="{Binding Line}" Width="65"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </GroupBox>
+                        <Grid Grid.Row="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="2*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <GroupBox Header="Boards in summary" Margin="0,2">
+                                <DataGrid ItemsSource="{Binding SelectedRunSummary.Boards}" AutoGenerateColumns="False" IsReadOnly="True">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Slot" Binding="{Binding Slot}" Width="80"/>
+                                        <DataGridTextColumn Header="Board" Binding="{Binding Description}" Width="*"/>
+                                        <DataGridTextColumn Header="S/N" Binding="{Binding SerialNumber}" Width="160"/>
+                                        <DataGridTextColumn Header="Line" Binding="{Binding Source.LineNumber}" Width="65"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </GroupBox>
+                            <GroupBox Grid.Column="1" Header="Run metadata" Margin="4,2,0,2">
+                                <DataGrid ItemsSource="{Binding SelectedRunSummary.Metadata}" AutoGenerateColumns="False" IsReadOnly="True">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Field" Binding="{Binding Key}" Width="130"/>
+                                        <DataGridTextColumn Header="Value" Binding="{Binding Value.Value}" Width="*"/>
+                                        <DataGridTextColumn Header="Line" Binding="{Binding Value.Source.LineNumber}" Width="55"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </GroupBox>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Source Events">
+                    <Grid Margin="6">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="{Binding DiagnosticObservationSummary}" Margin="4" Foreground="#555"/>
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding DiagnosticObservations}"
+                                  AutoGenerateColumns="False" IsReadOnly="True" CanUserSortColumns="True"
+                                  AlternatingRowBackground="#F8F8F8">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="110"/>
+                                <DataGridTextColumn Header="Module" Binding="{Binding Module}" Width="90"/>
+                                <DataGridTextColumn Header="Slot" Binding="{Binding Slot}" Width="55"/>
+                                <DataGridTextColumn Header="Channel" Binding="{Binding Channel}" Width="70"/>
+                                <DataGridTextColumn Header="Item" Binding="{Binding Item}" Width="2*"/>
+                                <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="85"/>
+                                <DataGridTextColumn Header="Unit" Binding="{Binding Unit}" Width="55"/>
+                                <DataGridTextColumn Header="Target" Binding="{Binding Target}" Width="85"/>
+                                <DataGridTextColumn Header="Limit" Binding="{Binding Limit}" Width="85"/>
+                                <DataGridTextColumn Header="Low" Binding="{Binding LowLimit}" Width="75"/>
+                                <DataGridTextColumn Header="High" Binding="{Binding HighLimit}" Width="75"/>
+                                <DataGridTextColumn Header="Result" Binding="{Binding Status}" Width="80"/>
+                                <DataGridTextColumn Header="Loop" Binding="{Binding LoopIndex}" Width="55"/>
+                                <DataGridTextColumn Header="Time" Binding="{Binding Timestamp}" Width="170"/>
+                                <DataGridTextColumn Header="Line" Binding="{Binding LineNumber}" Width="65"/>
+                                <DataGridTextColumn Header="Source text" Binding="{Binding RawMessage}" Width="3*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </Grid>
                 </TabItem>
                 <TabItem x:Name="DiagnosticsTab">
