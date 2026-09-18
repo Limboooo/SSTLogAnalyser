@@ -443,7 +443,7 @@ public partial class MainWindow : Window
             "Tolerance" => (ToleranceHeatmapCaptureArea, "Tolerance-Heatmap"),
             "Coefficient" => (CoefficientDistributionCaptureArea, "Gain-Offset"),
             "Residual" => (ResidualSignatureCaptureArea, "Residual-Signature"),
-            "Symmetry" => (SymmetryCaptureArea, "POS-NEG-Symmetry"),
+            "WaveOffset" => (WaveOffsetCaptureArea, "WAVE-OFFSET-Attribution"),
             _ => ((FrameworkElement?)null, string.Empty)
         };
         if (target == null || target.ActualWidth <= 0 || target.ActualHeight <= 0) return;
@@ -532,6 +532,18 @@ public partial class MainWindow : Window
         encoder.Save(stream);
     }
 
+    private void WaveOffsetDetailMode_Checked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel viewModel)
+            viewModel.SetWaveOffsetViewMode(detail: true);
+    }
+
+    private void WaveOffsetChannelMapMode_Checked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel viewModel)
+            viewModel.SetWaveOffsetViewMode(detail: false);
+    }
+
     private void DiagnosticExpand_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button || button.Tag is not string panelKey) return;
@@ -549,7 +561,7 @@ public partial class MainWindow : Window
             "Tolerance" => ToleranceHeatmapPanel,
             "Coefficient" => CoefficientDistributionPanel,
             "Residual" => ResidualSignaturePanel,
-            "Symmetry" => SymmetryPanel,
+            "WaveOffset" => WaveOffsetPanel,
             _ => null
         };
         if (target == null) return;
@@ -575,7 +587,7 @@ public partial class MainWindow : Window
             (Panel: ToleranceHeatmapPanel, Row: 0, Column: 0),
             (Panel: CoefficientDistributionPanel, Row: 0, Column: 2),
             (Panel: ResidualSignaturePanel, Row: 2, Column: 0),
-            (Panel: SymmetryPanel, Row: 2, Column: 2)
+            (Panel: WaveOffsetPanel, Row: 2, Column: 2)
         };
 
         foreach (var layout in layouts)
@@ -599,7 +611,7 @@ public partial class MainWindow : Window
         ToleranceHeatmapPanel,
         CoefficientDistributionPanel,
         ResidualSignaturePanel,
-        SymmetryPanel
+        WaveOffsetPanel
     ];
 
     private Button[] GetDiagnosticExpandButtons() =>
@@ -607,7 +619,7 @@ public partial class MainWindow : Window
         ToleranceHeatmapExpandButton,
         CoefficientDistributionExpandButton,
         ResidualSignatureExpandButton,
-        SymmetryExpandButton
+        WaveOffsetExpandButton
     ];
 
     private static void SetDiagnosticExpandButton(Button button, bool isExpanded)

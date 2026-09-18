@@ -56,10 +56,12 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private Axis[] _residualXAxes = Array.Empty<Axis>();
     [ObservableProperty] private Axis[] _residualYAxes = Array.Empty<Axis>();
     [ObservableProperty] private string _residualSummary = "Select a test item to inspect residual behavior.";
-    [ObservableProperty] private ISeries[] _symmetrySeries = Array.Empty<ISeries>();
-    [ObservableProperty] private Axis[] _symmetryXAxes = Array.Empty<Axis>();
-    [ObservableProperty] private Axis[] _symmetryYAxes = Array.Empty<Axis>();
-    [ObservableProperty] private string _symmetrySummary = "Select MIXI/AWG data to inspect POS/NEG symmetry.";
+    [ObservableProperty] private ISeries[] _waveOffsetSeries = Array.Empty<ISeries>();
+    [ObservableProperty] private Axis[] _waveOffsetXAxes = Array.Empty<Axis>();
+    [ObservableProperty] private Axis[] _waveOffsetYAxes = Array.Empty<Axis>();
+    [ObservableProperty] private string _waveOffsetSummary = "Select a MIXI WAVE/OFFSET verification item.";
+    [ObservableProperty] private bool _waveOffsetDetailMode = true;
+    [ObservableProperty] private bool _waveOffsetChannelMapMode;
 
     public ObservableCollection<LogFileInfo> LoadedFiles { get; } = new();
     public ObservableCollection<RunSummary> RunSummaries { get; } = new();
@@ -107,6 +109,12 @@ public partial class MainViewModel : ObservableObject
         string Title,
         List<TestResult> Points);
 
+    private sealed record WaveOffsetGroup(
+        long FileId,
+        int ChannelId,
+        int LoopIndex,
+        WaveOffsetAttribution Attribution);
+
     private static readonly SKColor[] Palette = new[]
     {
         SKColor.Parse("#2196F3"), SKColor.Parse("#4CAF50"), SKColor.Parse("#FF9800"),
@@ -126,6 +134,7 @@ public partial class MainViewModel : ObservableObject
         SelectedChannels.CollectionChanged += (_, _) =>
         {
             if (_isUpdatingChannelSelection) return;
+            SetWaveOffsetViewModeInternal(SelectedChannels.Count == 1);
             RefreshTestItems();
             UpdateChart();
             UpdateDiagnostics();
@@ -212,6 +221,7 @@ public partial class MainViewModel : ObservableObject
             _isUpdatingChannelSelection = false;
         }
 
+        SetWaveOffsetViewModeInternal(SelectedChannels.Count == 1);
         RefreshTestItems();
         UpdateChart();
         UpdateDiagnostics();
@@ -328,6 +338,7 @@ public partial class MainViewModel : ObservableObject
         UpdateDiagnostics();
         RefreshSecondaryViews();
     }
+
     partial void OnSelectedRunSummaryChanged(RunSummary? value)
     {
         RunFailedSlots.Clear();
@@ -357,6 +368,19 @@ public partial class MainViewModel : ObservableObject
     partial void OnCompareMultiChannelChanged(bool value) { if (value) CompareMultiLoop = false; UpdateChart(); }
     partial void OnCompareMultiLoopChanged(bool value) { if (value) CompareMultiChannel = false; UpdateChart(); }
     partial void OnPerformanceModeChanged(bool value) { UpdateChart(); }
+
+    public void SetWaveOffsetViewMode(bool detail)
+    {
+        SetWaveOffsetViewModeInternal(detail);
+        if (_diagnosticsActive)
+            UpdateWaveOffsetChart(LoadedFiles.Select(file => file.FileId).ToArray());
+    }
+
+    private void SetWaveOffsetViewModeInternal(bool detail)
+    {
+        WaveOffsetDetailMode = detail;
+        WaveOffsetChannelMapMode = !detail;
+    }
 
     private void RefreshFilters()
     {
@@ -462,8 +486,8 @@ public partial class MainViewModel : ObservableObject
 
         ResidualXAxes = new[] { new Axis { Name = "Expected / Target", NameTextSize = 10, TextSize = 9 } };
         ResidualYAxes = new[] { new Axis { Name = "Residual", NameTextSize = 10, TextSize = 9 } };
-        SymmetryXAxes = new[] { new Axis { Name = "Target", TextSize = 10 } };
-        SymmetryYAxes = new[] { new Axis { Name = "POS residual - NEG residual", TextSize = 10 } };
+        WaveOffsetXAxes = new[] { new Axis { Name = "WAVE / OFFSET composition", TextSize = 9 } };
+        WaveOffsetYAxes = new[] { new Axis { Name = "Error contribution (mV)", TextSize = 9 } };
     }
 
     private void UpdateChart()
@@ -579,7 +603,7 @@ public partial class MainViewModel : ObservableObject
         UpdateToleranceHeatmap(fileIds);
         UpdateCoefficientCharts();
         UpdateResidualChart(fileIds);
-        UpdateSymmetryChart(fileIds);
+        UpdateWaveOffsetChart(fileIds);
     }
 
     private void ClearDiagnostics()
@@ -588,11 +612,11 @@ public partial class MainViewModel : ObservableObject
         GainSeries = Array.Empty<ISeries>();
         OffsetSeries = Array.Empty<ISeries>();
         ResidualSeries = Array.Empty<ISeries>();
-        SymmetrySeries = Array.Empty<ISeries>();
+        WaveOffsetSeries = Array.Empty<ISeries>();
         ToleranceHeatmapSummary = "Load a LOG file to calculate tolerance utilization.";
         CoefficientSummary = "No calibration coefficient data.";
         ResidualSummary = "Select a test item to inspect residual behavior.";
-        SymmetrySummary = "Select MIXI/AWG data to inspect POS/NEG symmetry.";
+        WaveOffsetSummary = "Select a MIXI WAVE/OFFSET verification item.";
     }
 
     private void UpdateToleranceHeatmap(long[] fileIds)
@@ -846,103 +870,252 @@ public partial class MainViewModel : ObservableObject
             $"(Ch{worst.ChannelId})  |  Worst utilization: {worstUtilization:P1}";
     }
 
-    private void UpdateSymmetryChart(long[] fileIds)
+    private void UpdateWaveOffsetChart(long[] fileIds)
     {
+        WaveOffsetSeries = Array.Empty<ISeries>();
         if (SelectedModule != ModuleType.MIXI.ToString() || SelectedTestItem == null)
         {
-            SymmetrySeries = Array.Empty<ISeries>();
-            SymmetrySummary = "Select MIXI/AWG data to inspect POS/NEG symmetry.";
+            WaveOffsetSummary = "Select a MIXI WAVE/OFFSET verification item.";
+            return;
+        }
+
+        var familyItems = GetWaveOffsetFamilyItems(SelectedTestItem);
+        if (familyItems.Length == 0)
+        {
+            WaveOffsetSummary = "This Test Item has no WAVE/OFFSET composition data.";
             return;
         }
 
         var channels = SelectedChannels.Count > 0 ? SelectedChannels.ToArray() : null;
         var loops = SelectedLoops.Count > 0 ? SelectedLoops.ToArray() : null;
-        var data = _cache.QueryTestResults(fileIds, SelectedModule, SelectedTestItem, channels, loops)
-            .Where(r => !string.IsNullOrWhiteSpace(r.ComponentType))
-            .ToList();
-        if (data.Count == 0)
+        var data = familyItems
+            .SelectMany(item => _cache.QueryTestResults(fileIds, SelectedModule, item, channels, loops))
+            .DistinctBy(result => (result.FileId, result.LineNumber))
+            .Where(result => result.WaveValue.HasValue && result.OffsetValue.HasValue)
+            .ToArray();
+
+        var groups = new List<WaveOffsetGroup>();
+        foreach (var group in data.GroupBy(result => (result.FileId, result.ChannelId, result.LoopIndex)))
         {
-            SymmetrySeries = Array.Empty<ISeries>();
-            SymmetrySummary = "No POS / NEG component labels were found. Reload this LOG to refresh its cache.";
+            if (MixiWaveOffsetAnalyzer.TryAnalyze(group, out var attribution))
+                groups.Add(new WaveOffsetGroup(group.Key.FileId, group.Key.ChannelId, group.Key.LoopIndex, attribution));
+        }
+
+        if (groups.Count == 0)
+        {
+            WaveOffsetSummary = data.Length == 0
+                ? "No WAVE/OFFSET verification points match the current filters."
+                : "At least four independent WAVE/OFFSET combinations are required for attribution.";
             return;
         }
 
-        var pairs = new List<(long FileId, int ChannelId, int LoopIndex, double Target, double Mismatch)>();
-        foreach (var group in data.GroupBy(r => (
-                     r.FileId,
-                     r.ChannelId,
-                     r.LoopIndex,
-                     Target: Math.Round(r.ExpectValue, 12))))
+        if (WaveOffsetDetailMode)
+            RenderWaveOffsetDetail(groups);
+        else
+            RenderWaveOffsetChannelMap(groups);
+    }
+
+    private void RenderWaveOffsetDetail(IReadOnlyList<WaveOffsetGroup> groups)
+    {
+        var group = groups
+            .OrderByDescending(item => item.Attribution.Severity)
+            .ThenByDescending(item => item.Attribution.MaxAbsResidual)
+            .First();
+        var attribution = group.Attribution;
+        var points = attribution.Points
+            .OrderBy(point => point.Path == "POS" ? 0 : 1)
+            .ThenByDescending(point => point.Target)
+            .ThenByDescending(point => point.SignedWave)
+            .ToArray();
+        var xValues = Enumerable.Range(0, points.Length).Select(index => (double)index).ToArray();
+
+        var series = new List<ISeries>
         {
-            var pos = group.FirstOrDefault(r => NormalizeMixiComponent(r.ComponentType) == "POS");
-            var neg = group.FirstOrDefault(r => NormalizeMixiComponent(r.ComponentType) == "NEG");
-            if (pos == null || neg == null) continue;
+            CreateContributionColumns("WAVE effect", points.Select((point, index) =>
+                new ObservablePoint(index, point.WaveContribution * 1e3)), SKColor.Parse("#2878B5")),
+            CreateContributionColumns("OFFSET effect", points.Select((point, index) =>
+                new ObservablePoint(index, point.OffsetContribution * 1e3)), SKColor.Parse("#E58B2A")),
+            CreateContributionColumns("Bias", points.Select((point, index) =>
+                new ObservablePoint(index, point.BiasContribution * 1e3)), SKColor.Parse("#8C939C")),
+            new LineSeries<ObservablePoint>
+            {
+                Name = "Actual residual",
+                Values = points.Select((point, index) => new ObservablePoint(index, point.Residual * 1e3)).ToArray(),
+                Stroke = new SolidColorPaint(SKColor.Parse("#20262D")) { StrokeThickness = 2 },
+                GeometryStroke = new SolidColorPaint(SKColor.Parse("#20262D")) { StrokeThickness = 2 },
+                GeometryFill = new SolidColorPaint(SKColors.White),
+                GeometrySize = 6,
+                Fill = null,
+                LineSmoothness = 0
+            },
+            new LineSeries<ObservablePoint>
+            {
+                Name = "Model prediction",
+                Values = points.Select((point, index) => new ObservablePoint(index, point.PredictedResidual * 1e3)).ToArray(),
+                Stroke = new SolidColorPaint(SKColor.Parse("#3E9B67")) { StrokeThickness = 1.5f },
+                GeometryStroke = null,
+                GeometrySize = 0,
+                Fill = null,
+                LineSmoothness = 0
+            }
+        };
 
-            pairs.Add((group.Key.FileId, group.Key.ChannelId, group.Key.LoopIndex,
-                group.Key.Target, pos.Difference - neg.Difference));
-        }
-
-        if (pairs.Count == 0)
+        var failed = points.Select((point, index) => (point, index)).Where(item => item.point.IsFailed).ToArray();
+        if (failed.Length > 0)
         {
-            SymmetrySeries = Array.Empty<ISeries>();
-            SymmetrySummary = $"{data.Count} component points  |  No matching POS/NEG target pairs in this item.";
-            return;
+            series.Add(new ScatterSeries<ObservablePoint>
+            {
+                Name = "Failed",
+                Values = failed.Select(item => new ObservablePoint(item.index, item.point.Residual * 1e3)).ToArray(),
+                Fill = new SolidColorPaint(SKColor.Parse("#D7333F")),
+                GeometrySize = 11
+            });
         }
+        AddDiagnosticZeroLine(series, xValues);
 
-        var series = new List<ISeries>();
-        var groups = pairs.GroupBy(pair => (pair.FileId, pair.ChannelId, pair.LoopIndex))
-            .OrderBy(g => g.Key.FileId).ThenBy(g => g.Key.ChannelId).ThenBy(g => g.Key.LoopIndex)
-            .Select(group => (
-                Title: BuildDiagnosticGroupTitle(group.Key.FileId, group.Key.LoopIndex, group.Key.ChannelId, "Mismatch"),
-                Points: group.OrderBy(pair => pair.Target).ToArray()))
-            .ToList();
-        var limited = groups.Count > DiagnosticLargeSeriesThreshold || pairs.Count > DiagnosticLargePointThreshold;
-        var fast = limited || groups.Count > DiagnosticDetailSeriesLimit || pairs.Count > AutomaticFastPointThreshold;
-        var renderedGroups = limited
-            ? groups
-                .OrderByDescending(group => group.Points.Max(point => Math.Abs(point.Mismatch)))
-                .Take(DiagnosticWorstGroupCount)
-                .ToList()
-            : groups;
-
-        for (var index = 0; index < renderedGroups.Count; index++)
+        WaveOffsetSeries = series.ToArray();
+        WaveOffsetXAxes = new[]
         {
-            var group = renderedGroups[index];
-            AddDiagnosticLine(
-                series,
-                group.Title,
-                group.Points.Select(point => (point.Target, point.Mismatch)),
-                Palette[index % Palette.Length],
-                fast);
-        }
+            new Axis
+            {
+                Name = "Path / WAVE / OFFSET",
+                Labels = points.Select(FormatWaveOffsetPointLabel).ToArray(),
+                MinStep = 1,
+                ForceStepToMin = true,
+                LabelsRotation = -25,
+                TextSize = 8
+            }
+        };
+        WaveOffsetYAxes = new[] { new Axis { Name = "Error contribution (mV)", TextSize = 9 } };
 
-        var minTarget = pairs.Min(pair => pair.Target);
-        var maxTarget = pairs.Max(pair => pair.Target);
-        if (Math.Abs(maxTarget - minTarget) < 1e-20)
+        var title = BuildDiagnosticGroupTitle(group.FileId, group.LoopIndex, group.ChannelId);
+        WaveOffsetSummary = $"Detail: {title}  |  Likely: {attribution.LikelyCause} ({attribution.Confidence})  |  " +
+            $"WAVE {attribution.WaveSlope * 1e6:+0.0;-0.0;0} ppm  |  OFFSET {attribution.OffsetSlope * 1e6:+0.0;-0.0;0} ppm  |  " +
+            $"Bias {attribution.Bias * 1e3:+0.###;-0.###;0} mV  |  R² {attribution.RSquared:P1}  |  RMSE {attribution.Rmse * 1e3:0.###} mV";
+    }
+
+    private void RenderWaveOffsetChannelMap(IReadOnlyList<WaveOffsetGroup> groups)
+    {
+        var channelGroups = groups
+            .GroupBy(group => group.ChannelId)
+            .Select(channel => channel
+                .OrderByDescending(group => group.Attribution.Severity)
+                .ThenByDescending(group => group.Attribution.MaxAbsResidual)
+                .First())
+            .OrderBy(group => group.ChannelId)
+            .ToArray();
+        var channelIndex = channelGroups
+            .Select((group, index) => (group.ChannelId, index))
+            .ToDictionary(item => item.ChannelId, item => item.index);
+        var values = channelGroups.SelectMany(group => new[]
         {
-            minTarget -= 0.5;
-            maxTarget += 0.5;
-        }
+            new WeightedPoint(channelIndex[group.ChannelId], 0, group.Attribution.WaveEffectRms * 1e3),
+            new WeightedPoint(channelIndex[group.ChannelId], 1, group.Attribution.OffsetEffectRms * 1e3),
+            new WeightedPoint(channelIndex[group.ChannelId], 2, group.Attribution.Bias * 1e3)
+        }).ToArray();
+        var maxAbs = Math.Max(values.Max(point => Math.Abs(point.Weight ?? 0)), 1e-6);
+
+        WaveOffsetSeries = new ISeries[]
+        {
+            new HeatSeries<WeightedPoint>
+            {
+                Name = "Attributed error (mV)",
+                Values = values,
+                HeatMap = new[]
+                {
+                    SKColor.Parse("#2878B5").AsLvcColor(),
+                    SKColor.Parse("#E7ECEE").AsLvcColor(),
+                    SKColor.Parse("#D94B4B").AsLvcColor()
+                },
+                ColorStops = new[] { 0d, 0.5d, 1d },
+                MinValue = -maxAbs,
+                MaxValue = maxAbs
+            }
+        };
+
+        var labelStride = Math.Max(1, (int)Math.Ceiling(channelGroups.Length / 24d));
+        WaveOffsetXAxes = new[]
+        {
+            new Axis
+            {
+                Name = "Channel",
+                Labels = channelGroups.Select((group, index) =>
+                    index % labelStride == 0 || index == channelGroups.Length - 1 ? "Ch" + group.ChannelId : string.Empty).ToArray(),
+                MinStep = 1,
+                ForceStepToMin = true,
+                TextSize = 8
+            }
+        };
+        WaveOffsetYAxes = new[]
+        {
+            new Axis
+            {
+                Name = "Attributed component",
+                Labels = new[] { "WAVE effect", "OFFSET effect", "Bias" },
+                MinStep = 1,
+                ForceStepToMin = true,
+                TextSize = 9
+            }
+        };
+
+        var worst = channelGroups.MaxBy(group => group.Attribution.Severity)!;
+        var waveDominant = channelGroups.Count(group => group.Attribution.LikelyCause == "WAVE CAL");
+        var offsetDominant = channelGroups.Count(group => group.Attribution.LikelyCause == "OFFSET CAL");
+        var lowConfidence = channelGroups.Count(group => group.Attribution.Confidence == "Low");
+        var loopLabel = worst.LoopIndex == 0 ? "Initial" : "Loop " + worst.LoopIndex;
+        WaveOffsetSummary = $"Channel Map: {channelGroups.Length} channels  |  WAVE dominant: {waveDominant}  |  " +
+            $"OFFSET dominant: {offsetDominant}  |  Low confidence: {lowConfidence}  |  " +
+            $"Worst: Ch{worst.ChannelId} / {loopLabel} / {worst.Attribution.LikelyCause} ({worst.Attribution.Severity * 1e3:0.###} mV)";
+    }
+
+    private static ColumnSeries<ObservablePoint> CreateContributionColumns(
+        string name,
+        IEnumerable<ObservablePoint> values,
+        SKColor color) =>
+        new()
+        {
+            Name = name,
+            Values = values.ToArray(),
+            Fill = new SolidColorPaint(color),
+            Stroke = null,
+            MaxBarWidth = 12
+        };
+
+    private static void AddDiagnosticZeroLine(List<ISeries> series, IReadOnlyList<double> xValues)
+    {
+        if (xValues.Count == 0) return;
         series.Insert(0, new LineSeries<ObservablePoint>
         {
             Name = null,
             IsVisibleAtLegend = false,
-            Values = new[] { new ObservablePoint(minTarget, 0), new ObservablePoint(maxTarget, 0) },
+            Values = new[] { new ObservablePoint(xValues.Min() - 0.5, 0), new ObservablePoint(xValues.Max() + 0.5, 0) },
             Stroke = new SolidColorPaint(new SKColor(90, 98, 108, 150)) { StrokeThickness = 1 },
             GeometryStroke = null,
             GeometrySize = 0,
             Fill = null,
             LineSmoothness = 0
         });
+    }
 
-        SymmetrySeries = series.ToArray();
-        SymmetryXAxes = new[] { new Axis { Name = "Target", TextSize = 10 } };
-        SymmetryYAxes = new[] { new Axis { Name = "POS residual - NEG residual", TextSize = 10 } };
+    private static string FormatWaveOffsetPointLabel(WaveOffsetContribution point)
+    {
+        var wave = point.Path == "NEG" ? -point.SignedWave : point.SignedWave;
+        return $"{point.Path[0]} W{wave:G3}/O{point.Offset:G3}";
+    }
 
-        var worst = pairs.MaxBy(pair => Math.Abs(pair.Mismatch));
-        var renderLabel = limited ? $"Large selection: worst {renderedGroups.Count} groups  |  " : fast ? "Fast  |  " : string.Empty;
-        SymmetrySummary = $"{renderLabel}{pairs.Count} POS/NEG pairs  |  Mean |mismatch|: {pairs.Average(pair => Math.Abs(pair.Mismatch)):G6}  |  " +
-            $"Max |mismatch|: {Math.Abs(worst.Mismatch):G6} (Ch{worst.ChannelId} / Target {worst.Target:G6})";
+    private static string[] GetWaveOffsetFamilyItems(string selectedTestItem)
+    {
+        if (!selectedTestItem.Contains("WAVE_DAC_OFFSET_DAC", StringComparison.OrdinalIgnoreCase))
+            return Array.Empty<string>();
+
+        if (selectedTestItem.EndsWith("_POS", StringComparison.OrdinalIgnoreCase) ||
+            selectedTestItem.EndsWith("_NEG", StringComparison.OrdinalIgnoreCase))
+        {
+            var baseName = selectedTestItem[..^4];
+            return new[] { baseName + "_POS", baseName + "_NEG" };
+        }
+
+        return new[] { selectedTestItem };
     }
 
     private static void AddDiagnosticLine(

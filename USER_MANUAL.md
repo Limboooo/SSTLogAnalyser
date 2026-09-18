@@ -340,7 +340,7 @@ Diagnostics 位于 Chart 后面，使用当前 Module、Channel、Test Item 和 
 
 每张诊断图标题旁都有保存图标，可将该面板当前显示的摘要、筛选状态和图表保存为 PNG。Gain / Offset 会将上下两张分布图作为一个面板一起保存。
 
-Diagnostics 只在标签页可见或处于独立浮窗时刷新。Residual 和 POS-NEG 图在数据量较大时只绘制风险最高的 20 组原始曲线；热力图由数据库直接计算每个 Channel/Test Item 的最坏结果，避免加载全部原始行。
+Diagnostics 只在标签页可见或处于独立浮窗时刷新。Residual 图在数据量较大时只绘制风险最高的 20 组原始曲线；容差热力图和 WAVE/OFFSET Channel Map 使用聚合结果，避免同时绘制大量原始曲线。
 
 ### Tolerance Utilization Heatmap（容差利用率热力图）
 
@@ -361,12 +361,15 @@ Diagnostics 只在标签页可见或处于独立浮窗时刷新。Residual 和 P
 - 整体上下偏移通常对应 Offset 问题；随 Target 单调倾斜通常对应 Gain 问题；弯曲或周期形状可能提示非线性或量程相关问题；孤立尖峰更像单点异常。
 - 顶部摘要提供 RMS、最大绝对残差及其 Channel、最差容差利用率。比较多条线时，先找明显偏离共同形状的 Channel 或 Loop。
 
-### MIXI / AWG POS-NEG Symmetry Mismatch（正负路径不对称量图）
+### WAVE / OFFSET Error Attribution（WAVE / OFFSET 误差归因图）
 
-- 仅在选中包含 POS/NEG 标记的 MIXI/AWG 数据时显示。
-- 每个 Channel/Loop 只绘制一条派生曲线：`Mismatch = POS residual - NEG residual`，不再重复显示 Residual Signature 中的原始 POS/NEG 曲线。
-- 水平零线表示完全对称；曲线离零线越远，表示该 Target 下的正负路径差异越大，正负号表示偏差方向。
-- 摘要中的 `Mean |mismatch|` 和 `Max |mismatch|` 分别表示平均和最大绝对不对称量，并标出最坏 Channel 和 Target。
+- 仅用于名称含 `WAVE_DAC_OFFSET_DAC`、同时具有 WAVE/OFFSET 值和 POS/NEG 路径的 MIXI 数据。选择 POS 或 NEG 测试项时，工具会自动查找另一条兄弟路径并合并分析。
+- 工具按 `POS Target = WAVE + OFFSET`、`NEG Target = OFFSET - WAVE` 校验数据，再拟合 `Residual = kW × SignedWave + kO × Offset + Bias`。不满足目标组成关系的数据不会参与归因。
+- **Detail：** 适合检查一个 Channel。柱形分别表示各测量点中 WAVE、OFFSET 和固定 Bias 对残差的贡献，折线比较 Actual residual 与 Model prediction。两条线越接近，归因越可信。
+- **Channel Map：** 适合同时选择多个 Channel 或 ALL。三行分别表示 WAVE effect RMS、OFFSET effect RMS 和 Bias，统一以 mV 显示；颜色离中间零色越远，代表该项贡献越明显。每个 Channel 显示当前筛选范围内风险最高的 Loop。
+- 单选 Channel 时默认进入 Detail；多选或 ALL 时默认进入 Channel Map，也可用右上角分段按钮手动切换。
+- 摘要中的 `Likely` 是主导误差来源，`WAVE slope` 和 `OFFSET slope` 以 ppm 表示相对斜率误差，`Bias` 是固定偏移，`R²` 表示模型解释度，`RMSE` 表示未被模型解释的剩余误差。
+- `R² ≥ 0.85` 为高置信度，`0.60–0.85` 为中等置信度；`R² < 0.50` 时显示 `Mixed / low confidence`，此时应结合 Residual Signature 和原始数据判断，不应只凭归因结论更换硬件。
 
 ---
 
@@ -751,6 +754,16 @@ CREATE TABLE system_info (
 
 ## 版本历史
 
+### v1.2.4 (2026-08-04)
+
+**MIXI WAVE/OFFSET 误差归因**
+- [x] Diagnostics 右下角替换为 WAVE / OFFSET Error Attribution
+- [x] 自动配对 MIXI POS/NEG 兄弟测试项，并校验 Target 的 WAVE/OFFSET 组成关系
+- [x] Detail 模式显示 WAVE、OFFSET、Bias 贡献以及 Actual/Prediction 对比
+- [x] Channel Map 模式支持快速比较多 Channel，并标示每个 Channel 的最差 Loop
+- [x] 增加主因、斜率 ppm、Bias、R²、RMSE 和置信度摘要
+- [x] 新图继续支持单图放大和 PNG 导出
+
 ### v1.2.1 (2026-07-24)
 
 **安装体验、对称性诊断与大数据稳定性**
@@ -811,6 +824,6 @@ CREATE TABLE system_info (
 
 ---
 
-**文档版本：** 1.2.1
-**最后更新：** 2026-07-24
+**文档版本：** 1.2.4
+**最后更新：** 2026-08-04
 **作者：** SST Log Analyser Team

@@ -202,6 +202,18 @@ SelectedChannels + SelectedLoops → QueryTestResults → UpdateChart
 
 The Channel finder accepts a numeric ID with optional `CH` or `Channel` prefix. It is a navigation action rather than a data filter, so its text never filters Test Items or Diagnostics queries.
 
+## MIXI WAVE/OFFSET Attribution
+
+The lower-right Diagnostics panel attributes MIXI residuals to WAVE calibration, OFFSET calibration, and a fixed common bias. Selecting either `*_POS` or `*_NEG` automatically queries its sibling item so both paths participate in the fit.
+
+For each valid point, the analyzer verifies `POS Target = WAVE + OFFSET` or `NEG Target = OFFSET - WAVE`, then fits the centered least-squares model:
+
+`Residual = kW * SignedWave + kO * Offset + Bias`
+
+`MixiWaveOffsetAnalyzer` returns the two slopes, bias, R-squared, RMSE, signed RMS effects, point-level contributions, and a conservative likely-cause classification. Singular inputs and target-composition mismatches are rejected rather than producing an unstable attribution.
+
+Detail mode renders contribution columns plus actual and predicted residual lines for the riskiest selected Channel/Loop. Channel Map mode renders WAVE RMS, OFFSET RMS, and Bias rows for multiple Channels, selecting the riskiest Loop per Channel. A single Channel defaults to Detail; multiple Channels default to Channel Map.
+
 For MIXI (AWG/DTZ), selecting a channel filters the test item list to only show items belonging to that channel, since AWG and DTZ channels have distinct test item sets.
 
 All filter changes trigger reactive updates via `CommunityToolkit.Mvvm` partial methods (`OnSelectedModuleChanged`, etc.).
