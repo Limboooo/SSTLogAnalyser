@@ -1,35 +1,35 @@
 2026-09-30 10:00:00,000 INFO  - Index 1 of 2
 2026-09-30 10:00:00,000 INFO  - DPS Channel 200: V, -3, 8, Force Voltage Verification
 2026-09-30 10:00:00,000 INFO  - ,    Expect,          DmmMeasure,  LowLimit,   UpLimit,               Difference,
-2026-09-30 10:00:00,000 INFO  - ,1,1.0002,-0.001,0.001,0.0002,
+2026-09-30 10:00:00,000 INFO  - ,0,0.0002,-0.001,0.001,0.0002,
 2026-09-30 10:00:00,000 ERROR  - ,1,1.002,-0.001,0.001,0.002,Failed
 2026-09-30 10:00:00,000 INFO  - DPSI Channel 200: V, -3, 8, Force Voltage Verification
 2026-09-30 10:00:00,000 INFO  - ,    Expect,          DmmMeasure,  LowLimit,   UpLimit,               Difference,
-2026-09-30 10:00:00,000 INFO  - ,1,1.0002,-0.001,0.001,0.0002,
+2026-09-30 10:00:00,000 INFO  - ,0,0.0002,-0.001,0.001,0.0002,
 2026-09-30 10:00:00,000 ERROR  - ,1,1.002,-0.001,0.001,0.002,Failed
 2026-09-30 10:00:00,000 INFO  - PMU Channel 200: V, -3, 8, Force Voltage Verification
 2026-09-30 10:00:00,000 INFO  - ,    Expect,          DmmMeasure,  LowLimit,   UpLimit,               Difference,
-2026-09-30 10:00:00,000 INFO  - ,1,1.0002,-0.001,0.001,0.0002,
+2026-09-30 10:00:00,000 INFO  - ,0,0.0002,-0.001,0.001,0.0002,
 2026-09-30 10:00:00,000 ERROR  - ,1,1.002,-0.001,0.001,0.002,Failed
 2026-09-30 10:00:00,000 INFO  - MVPI Channel 200: V, -10, 15, Force Voltage Verification
 2026-09-30 10:00:00,000 INFO  - ,    Expect,          DmmMeasure,  LowLimit,   UpLimit,               Difference,
-2026-09-30 10:00:00,000 INFO  - ,1,1.0002,-0.001,0.001,0.0002,
+2026-09-30 10:00:00,000 INFO  - ,0,0.0002,-0.001,0.001,0.0002,
 2026-09-30 10:00:00,000 ERROR  - ,1,1.002,-0.001,0.001,0.002,Failed
 2026-09-30 10:00:00,000 INFO  - MDM Channel 200: V, 1.0V, Measure Voltage Verification
 2026-09-30 10:00:00,000 INFO  - ,    Expect,          DmmMeasure,  LowLimit,   UpLimit,               Difference,
-2026-09-30 10:00:00,000 INFO  - ,1,1.0002,-0.001,0.001,0.0002,
+2026-09-30 10:00:00,000 INFO  - ,0,0.0002,-0.001,0.001,0.0002,
 2026-09-30 10:00:00,000 ERROR  - ,1,1.002,-0.001,0.001,0.002,Failed
 2026-09-30 10:00:00,000 INFO  - HVPI Channel 200: V, -40, 40, Force Voltage Verification
 2026-09-30 10:00:00,000 INFO  - ,    Expect,          DmmMeasure,  LowLimit,   UpLimit,               Difference,
-2026-09-30 10:00:00,000 INFO  - ,1,1.0002,-0.001,0.001,0.0002,
+2026-09-30 10:00:00,000 INFO  - ,0,0.0002,-0.001,0.001,0.0002,
 2026-09-30 10:00:00,000 ERROR  - ,1,1.002,-0.001,0.001,0.002,Failed
 2026-09-30 10:00:00,000 INFO  - HDM Channel 200: V, 1.0V, Measure Voltage Verification
 2026-09-30 10:00:00,000 INFO  - ,    Expect,          DmmMeasure,  LowLimit,   UpLimit,               Difference,
-2026-09-30 10:00:00,000 INFO  - ,1,1.0002,-0.001,0.001,0.0002,
+2026-09-30 10:00:00,000 INFO  - ,0,0.0002,-0.001,0.001,0.0002,
 2026-09-30 10:00:00,000 ERROR  - ,1,1.002,-0.001,0.001,0.002,Failed
 2026-09-30 10:00:00,000 INFO  - MXVI Channel 200: V, -25, 25, Force Voltage Verification
 2026-09-30 10:00:00,000 INFO  - ,    Expect,          DmmMeasure,  LowLimit,   UpLimit,               Difference,
-2026-09-30 10:00:00,000 INFO  - ,1,1.0002,-0.001,0.001,0.0002,
+2026-09-30 10:00:00,000 INFO  - ,0,0.0002,-0.001,0.001,0.0002,
 2026-09-30 10:00:00,000 ERROR  - ,1,1.002,-0.001,0.001,0.002,Failed
 2026-09-30 10:00:00,000 INFO  - VIH Verification
 2026-09-30 10:00:00,000 INFO  - ,Pin,Expect,Measure,LowLimit,UpLimit,Difference,
