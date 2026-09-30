@@ -19,7 +19,6 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly CacheService _cache;
     private readonly LogParser _parser;
-
     [ObservableProperty] private ISeries[] _series = Array.Empty<ISeries>();
     [ObservableProperty] private Axis[] _xAxes = Array.Empty<Axis>();
     [ObservableProperty] private Axis[] _yAxes = Array.Empty<Axis>();
@@ -254,7 +253,7 @@ public partial class MainViewModel : ObservableObject
         var dialog = new OpenFileDialog
         {
             Title = "Select LOG Files",
-            Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*",
+            Filter = "SST Logs (*.txt;*.log;*.csv)|*.txt;*.log;*.csv|All Files (*.*)|*.*",
             Multiselect = true
         };
         if (dialog.ShowDialog() != true) return;
@@ -274,8 +273,7 @@ public partial class MainViewModel : ObservableObject
             {
                 StatusText = "Processing: " + Path.GetFileName(path);
                 var fileName = Path.GetFileName(path);
-                if (fileName.StartsWith("SST_Summary_", StringComparison.OrdinalIgnoreCase) ||
-                    fileName.Equals("AUTOTEST_Result.txt", StringComparison.OrdinalIgnoreCase))
+                if (RunSummaryParser.IsSummaryFile(path))
                 {
                     if (!RunSummaries.Any(s => string.Equals(s.SourceFile, path, StringComparison.OrdinalIgnoreCase)))
                     {
@@ -284,7 +282,6 @@ public partial class MainViewModel : ObservableObject
                         SelectedRunSummary = summary;
                     }
                     StatusText = "Loaded run summary: " + fileName;
-                    continue;
                 }
                 var hash = await FileHashService.ComputeSha256Async(path);
                 var existingId = _cache.FindFileByHash(hash);
@@ -315,6 +312,7 @@ public partial class MainViewModel : ObservableObject
                 if (result.DiagnosticObservations.Count > 0)
                     _cache.InsertDiagnosticObservations(fileId, result.DiagnosticObservations);
                 if (result.SystemInfos.Count > 0) _cache.InsertSystemInfos(fileId, result.SystemInfos);
+                _cache.MarkFileComplete(fileId);
                 LoadedFiles.Add(result.FileInfo);
                 StatusText = "Parsed: " + Path.GetFileName(path) + " (" + result.TestResults.Count + " data points)";
             }

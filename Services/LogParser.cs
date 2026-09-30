@@ -7,7 +7,7 @@ namespace SSTLogAnalyser.Services;
 
 public class LogParser
 {
-    private static readonly Regex TimestampRegex = new(@"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2},\d{3})\s+(INFO|ERROR|FATAL|WARN)\s+-\s*(.*)", RegexOptions.Compiled);
+    private static readonly Regex TimestampRegex = new(@"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[,.]\d{3})\s+(INFO|ERROR|FATAL|WARN|DEBUG|TRACE)\s+-\s*(.*)", RegexOptions.Compiled);
     private static readonly Regex LoopRegex = new(@"Index\s+(\d+)\s+of\s+(\d+)", RegexOptions.Compiled);
     private static readonly Regex VerificationHeaderRegex = new(@"^(Re-test\s+)?(\w+)\s+Channel\s+(\d+):\s*(.+?),\s*(.+)\s+Verification\s*$", RegexOptions.Compiled);
     private static readonly Regex MvpiMeasureHeaderRegex = new(@"^(Re-test\s+)?MVPI\s+Channel\s+(\d+):\s*(.+\bMeasure\b.+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -53,6 +53,8 @@ public class LogParser
         string[]? columnNames = null;
         bool inDataBlock = false;
         string currentTimestamp = string.Empty;
+        string currentLevel = "INFO";
+        var processParser = new ProcessLogParser();
         bool inMixiBlock = false;
         string? mixiTestItem = null;
         int mixiChannel = 0;
@@ -84,13 +86,20 @@ public class LogParser
             {
                 currentTimestamp = tsMatch.Groups[1].Value;
                 level = tsMatch.Groups[2].Value;
+                currentLevel = level;
                 message = tsMatch.Groups[3].Value.Trim();
             }
             else
             {
-                level = "INFO";
+                level = currentLevel;
                 message = line.Trim();
             }
+
+            result.DiagnosticObservations.AddRange(processParser.Parse(message, currentTimestamp, lineNumber, currentLoop));
+            // Capture error-level lines before any specialized parser consumes them.
+            if (level is "ERROR" or "FATAL" && !string.IsNullOrWhiteSpace(message) && !message.Contains("**"))
+                result.Errors.Add(new ErrorLogEntry { LoopIndex = currentLoop, Timestamp = currentTimestamp,
+                    Level = level, Message = message, LineNumber = lineNumber });
 
             if (DiagnosticLogParser.TryParse(message, currentTimestamp, lineNumber, currentLoop, out var observation))
                 result.DiagnosticObservations.Add(observation);
@@ -425,20 +434,6 @@ public class LogParser
                 }
             }
 
-            if (level == "ERROR" || level == "FATAL")
-            {
-                if (message.Contains("**") || string.IsNullOrWhiteSpace(message))
-                    continue;
-                result.Errors.Add(new ErrorLogEntry
-                {
-                    LoopIndex = currentLoop,
-                    Timestamp = currentTimestamp,
-                    Level = level,
-                    Message = message,
-                    LineNumber = lineNumber
-                });
-            }
-
             var devMatch = DeviceGroupRegex.Match(message);
             if (devMatch.Success)
             {
@@ -630,7 +625,7 @@ public class LogParser
     }
 
     private static bool TryNumber(string value, out double number) =>
-        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number);
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number) && double.IsFinite(number);
 
     private TestResult? ParseDataRow(string line, string[] columnNames, int loopIndex,
         ModuleType moduleType, int channelId, string testItemName, bool isReTest, int lineNumber, string timestamp)
@@ -672,11 +667,11 @@ public class LogParser
             {
                 if (!int.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out actualChannel))
                     return null;
-                expect = ParseDouble(parts[1]);
-                measure = ParseDouble(parts[2]);
-                lowLimit = ParseDouble(parts[3]);
-                upLimit = ParseDouble(parts[4]);
-                difference = ParseDouble(parts[5]);
+                expect = RequiredNumber(parts[1]);
+                measure = RequiredNumber(parts[2]);
+                lowLimit = RequiredNumber(parts[3]);
+                upLimit = RequiredNumber(parts[4]);
+                difference = RequiredNumber(parts[5]);
             }
             else if (columnNames.Length >= 5 && adcCol >= 0 && adcCol < columnNames.Length - 3)
             {
@@ -686,28 +681,28 @@ public class LogParser
                 int diffIdx = adcCol + 3;
                 if (diffIdx >= columnNames.Length || parts.Length < diffIdx + 1)
                     return null;
-                expect = ParseDouble(parts[0]);
-                measure = ParseDouble(parts[1]);
-                adcMeasure = ParseDouble(parts[adcCol]);
-                lowLimit = ParseDouble(parts[lowIdx]);
-                upLimit = ParseDouble(parts[upIdx]);
-                difference = ParseDouble(parts[diffIdx]);
+                expect = RequiredNumber(parts[0]);
+                measure = RequiredNumber(parts[1]);
+                adcMeasure = RequiredNumber(parts[adcCol]);
+                lowLimit = RequiredNumber(parts[lowIdx]);
+                upLimit = RequiredNumber(parts[upIdx]);
+                difference = RequiredNumber(parts[diffIdx]);
             }
             else if (columnNames.Length >= 6)
             {
-                expect = ParseDouble(parts[0]);
-                measure = ParseDouble(parts[1]);
-                lowLimit = ParseDouble(parts[3]);
-                upLimit = ParseDouble(parts[4]);
-                difference = ParseDouble(parts[5]);
+                expect = RequiredNumber(parts[0]);
+                measure = RequiredNumber(parts[1]);
+                lowLimit = RequiredNumber(parts[3]);
+                upLimit = RequiredNumber(parts[4]);
+                difference = RequiredNumber(parts[5]);
             }
             else if (columnNames.Length >= 5)
             {
-                expect = ParseDouble(parts[0]);
-                measure = ParseDouble(parts[1]);
-                lowLimit = ParseDouble(parts[2]);
-                upLimit = ParseDouble(parts[3]);
-                difference = ParseDouble(parts[4]);
+                expect = RequiredNumber(parts[0]);
+                measure = RequiredNumber(parts[1]);
+                lowLimit = RequiredNumber(parts[2]);
+                upLimit = RequiredNumber(parts[3]);
+                difference = RequiredNumber(parts[4]);
             }
             else
             {
@@ -754,6 +749,13 @@ public class LogParser
         if (double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var val))
             return val;
         return 0;
+    }
+
+    private static double RequiredNumber(string text)
+    {
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) || !double.IsFinite(value))
+            throw new FormatException("Non-numeric measurement: " + text);
+        return value;
     }
 
     private void ExtractSystemInfo(string message, ParseResult result)

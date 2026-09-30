@@ -6,7 +6,7 @@ namespace SSTLogAnalyser.Services;
 
 public class CacheService : IDisposable
 {
-    private const int CurrentParserVersion = 6;
+    private const int CurrentParserVersion = 8;
     private readonly string _dbPath;
     private SqliteConnection _connection;
 
@@ -20,6 +20,14 @@ public class CacheService : IDisposable
         _connection = new SqliteConnection("Data Source=" + _dbPath);
         _connection.Open();
         InitializeSchema();
+
+        using var readyColumn = _connection.CreateCommand();
+        readyColumn.CommandText = "ALTER TABLE log_files ADD COLUMN import_complete INTEGER NOT NULL DEFAULT 0";
+        try { readyColumn.ExecuteNonQuery(); }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 1 && ex.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) { }
+        using var removeRawCache = _connection.CreateCommand();
+        removeRawCache.CommandText = "DROP TABLE IF EXISTS source_lines";
+        removeRawCache.ExecuteNonQuery();
     }
 
     private void InitializeSchema()
@@ -154,20 +162,22 @@ public class CacheService : IDisposable
     public long? FindFileByHash(string hash)
     {
         using var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT file_id, parser_version FROM log_files WHERE file_hash = @hash";
+        cmd.CommandText = "SELECT file_id, parser_version, import_complete FROM log_files WHERE file_hash = @hash";
         cmd.Parameters.AddWithValue("@hash", hash);
         long? fileId = null;
         var parserVersion = 1;
+        bool importComplete = false;
         using (var reader = cmd.ExecuteReader())
         {
             if (reader.Read())
             {
                 fileId = reader.GetInt64(0);
                 parserVersion = reader.GetInt32(1);
+                importComplete = reader.GetInt32(2) == 1;
             }
         }
 
-        if (fileId.HasValue && parserVersion != CurrentParserVersion)
+        if (fileId.HasValue && (parserVersion != CurrentParserVersion || !importComplete))
         {
             DeleteCachedFile(fileId.Value);
             return null;
@@ -787,6 +797,13 @@ public class CacheService : IDisposable
         };
     }
 
+    public void MarkFileComplete(long fileId)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "UPDATE log_files SET import_complete=1 WHERE file_id=@fid";
+        cmd.Parameters.AddWithValue("@fid", fileId);
+        cmd.ExecuteNonQuery();
+    }
     public void Dispose()
     {
         _connection?.Dispose();

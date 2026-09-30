@@ -5,7 +5,7 @@
 - `01`–`07`：DC、AC、TMU、诊断事件、纯 CAL 和 MIXI 误差归因。
 - `08`–`11`：Passed、Failed、Aborted Summary 和 AutoTest 结果。
 - `12`–`16`：AC/TMU 过程、寄存器、异常输入及诊断格式。
-- `17_Trunk_OutputTemplates.log`：源码输出模板语料，包含占位符和不完整片段，仅用于原文保留和容错测试。
+- `17_Trunk_OutputTemplates.log`：源码输出模板语料，包含占位符和不完整片段，仅用于容错测试，不代表完整运行日志。
 - `18`–`20`：Sigma、MIXI FFT、MXVI Short / Resistor。
 - `21_DPS_Sweep_LogAll.log`：参照 2026-02-04 真实 LogAll 的 DPS 电压扫描格式，2 个通道、2 个 Loop，每组 -3..8 V 共 12 点，48 点中刻意设置 2 点超限。上下限为误差限值 ±(0.001 + |Expect| × 0.0005)，用于查看 High / Low Limit 曲线；测量值仍为合成数据。
 

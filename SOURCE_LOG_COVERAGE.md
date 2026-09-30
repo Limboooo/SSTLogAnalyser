@@ -1,23 +1,49 @@
 # SST 源码日志解析覆盖表
 
-本表以 `D:\1_SVN\SST\Trunk\S200VerCalDia` 中的日志写入代码为依据。`ERROR` 是日志级别，不直接等于测试失败；只有 SST 明写的判定才标记为“显式结果”。
+核对日期：2026-09-30。源代码为本机 D:\1_SVN\SST\Trunk\S200VerCalDia 当前工作副本；未修改 Trunk。
 
-| 源码输出 | 当前工具处理 | 可得结论 / 边界 |
+## 覆盖的含义
+
+按用户要求移除 All Log Lines 页面、通用字段提取和逐行原文缓存。只解析已知业务格式；不匹配的过程文本不提供字段展示或原文检索。已有 source_lines 缓存表在新版本初始化时删除，原始 LOG 文件不受影响。
+
+结构化覆盖：下表中的已知格式另提取测试点、系数、诊断/过程指标、表格列或 Summary。ERROR 是级别；只有日志明确记录的结果才标为显式 Pass/Fail。数值超限推导与源代码判定分开。
+
+源码调用清单和模板容错测试不能证明所有动态路径的业务语义均已验证。
+
+| 输出格式 / 源码依据 | 当前处理 | 固定验证样本 |
 |---|---|---|
-| `MainWindow.xaml.cs` 的 `SST_Summary_*.txt`、`AUTOTEST_Result.txt` | Run Summary 页读取总体状态、阶段、失败 Slot、板卡和元数据，并保留行号 | Summary 是整次运行的权威判定；AutoTest 无总体状态时显示 Unknown |
-| `DcCal.cs` 的 DPS/DPSI/PMU/PE/PPMU/MVPI/MDM/HVI/HVPI/HDM/MXVI 验证表及 Gain/Offset | 测试点、ADC 原值、系数分布；无 Slot 的行标成未知 Slot | 可看通道残差、限值和系数离群；不能单靠 M/C 推断校准前误差 |
-| `ACCalClass.cs` 的 `SummaryReport` | 六种边沿数值拆成测试点；整 Pin `Result` 单独存放 | 边沿超限可定位；整 Pin Fail 不会被错误套给所有边沿；NA 不会当 Pass |
-| `TmuCalClass.cs` 的 Path Verification | 每条路径数值和明确的 `false;` 判定 | 可比较路径误差；无明确 Pass 字段时不推断 Overall Pass |
-| `DcDiag.cs` 的 Diagnosis、MXVI Short、MIXI FFT | Source Events 页展示数值、限值、结果和原文行 | 可追查明确的诊断失败；未在单行给出的 Slot 保持空白 |
-| `DcCal.cs` 的 PPMU Leakage / Pin-to-pin Zero | Source Events 页展示电流与通道 | v1 超限后缀可判 Fail；v2 和 PairZero 无判定则为 Unknown |
-| `ThermalDetect.cs`、`FlashAccess.cs`、电阻校准写入点 | Source Events 页展示温度告警、Flash 不一致和电阻测值 | 温度无 Warning 时不擅自标 Pass；Flash mismatch 明确标 Fail |
+| MainWindow 模块/Channel/Re-test；DcCal DC 验证 CSV | DPS、DPSI、PMU、MVPI、MDM、HVPI、HDM、MXVI、PE、PPMU 测试点；ADC、残差、限值、Loop、Re-test | 01：22 点，10 超限；ADC=1.0003 |
+| DcCal Gain/Offset 与 MIXI M/C | 系数独立缓存；纯 CAL 模块可筛选 | 05：0 点、2 系数 |
+| ACCalClass SummaryReport 边沿 CSV | 数值边沿与整 Pin 显式结果分开；NA 不作数值或 Pass | 02：14 点，2 Fail |
+| ACCalClass FinalVerSummary 两级 pipe/comma 表 | 按边沿提取 Max/Min/Range；无判定保持 Unknown | 12：18 个汇总指标 |
+| ACCalClass Slot ALIGN、CalValueLog、SearchingReport | 保留 Slot 判定、数值最终校准值；不再提取采样序列、NA 和搜索轨迹字段 | 12：2 Slot 判定、1 Cal value |
+| TmuCalClass Path Verification | 8 路径；false; 才是显式整体 Fail，空结果不补 Pass | 03：17 点、2 Fail |
+| TmuCalClass Path Cal Summary / Tmu0、Tmu1 表 | 每列独立提取；重复列名按顺序保留，并标记组别 | 13：18 个校准表指标 |
+| TmuCalClass FMEA/EC、Calibration Value、FAIL-FMU/TMU | 频率、EC、校准值、同一行 ppm 范围与结果；不由颜色推断结果 | 13：8 个时钟/校准事件 |
+| DcDiag Diagnosis、Pin/Channel List、Line Resistance、PE Leakage、PPMU | 数值/结果/明确限值；电压预检标 V、电阻标 ohm；比较状态另保留二进制文本 | 04、16 |
+| DcDiag MXVI Short | FI 检查 MV(V)，FV 检查 MI(A)；Check 范围支持实际 F8 补空格格式 | 20：FI/FV 检查及边界；另含 Resule 电阻判定 |
+| DcDiag MIXI FFT 多行表及单行结果 | Result/Slot/DTZ CH 总体结果；六指标、V 容差、SNR/THD 边界；NaN 保留空值及明确判定 | 19：1 整体判定、6 指标；频率百分比限值仍在事件原文中，不作为 Hz 限值 |
+| DcCal PPMU Leakage v1/v2、PairZero | 电流、通道、v1 超限后缀及范围；无判定保持 Unknown | 04 |
+| ThermalDetect、FlashAccess | 温度/Warning、Flash M/C Write/Read 字段、Write/readback 失败 | 04、14 |
+| RegDiag/ViRegDiag/MIXI Register -- Pass/Fail | 保留通道判定及事件原文；不再通用提取地址、读写、Mask 字段；没有板卡类型时不强填 Module | 14 |
+| MainWindow SST_Summary、AUTOTEST_Result | 按内容识别改名文件；总体/阶段/板卡/SN/失败 Slot/元数据 | 08–11，实际导入链已验证 |
+| MainWindow Sigma Summary / 数字序列 CSV | 专用表头提取 Module/Channel/Sigma 事件；不再通用提取无表头标量 | 18 |
+| 阶段 Start/End、配置、调试、其他过程信息 | 不再提供通用字段提取；ERROR/FATAL 仍通过既有错误列表处理 | 15、17 验证不崩溃及非法数值不变成测试点 |
 
-## 尚未接入
+## 源码清单与回归
 
-- `ACCalClass.cs` 的 FinalVerSummary、ALIGN 检查、CalValue / ChangePoint 原始过程及搜索轨迹。部分过程日志受源码开关控制，缺失不代表未执行。
-- `TmuCalClass.cs` 的 Path Cal Summary 和 FMEA/EC 数值。现有 Path Verification 不等于校准过程全覆盖。
-- 跨阶段耗时轴。源码有 Start/End 锚点，但需先定义缺失 End、嵌套阶段、并行输出的配对规则。
-- PPMU Leakage 的专用分布图和同通道跨文件趋势；当前可在 Source Events 逐行查看与排序。
-- 校准改善量。提案中的 `x·(1−1/M)+C/M` 不能未经 `CalculateMC` 语义核实就用于硬件结论，尤其 DPS FV 的 M/C 量纲与普通线性增益不同。
+扫描主项目 csproj 实际 Compile 列表中的 73 个源文件，用 C# 语法树抽取 5,079 个候选日志 API、文本写入及文本构造调用，涉及 28 个文件；排除 BackUP 和注释。详见 [源码清单](validation/audit/TRUNK_LOG_AUDIT.md)。完整表达式、行号、源码哈希在同目录 JSON。
 
-导入方式：加载 LogAll 解析测试点及事件；另加载 `SST_Summary_*.txt` 或 `AUTOTEST_Result.txt` 解析运行总览。缓存版本更新后，重新加载旧文件会自动重解析。
+清单涵盖 LogAll、FatalAndError、Warning、Summary、Sigma、AC/TMU、寄存器/Flash、MIXI、系统及生产配置；也包含需要辨别的 UI-only 信息和配置文本构造。XML/二进制是配置或数据产物，不等同于 LOG，不会伪装成测试点。
+
+17_Trunk_OutputTemplates.log 是候选调用原始字符串模板拼成的鲁棒性语料，含占位符和不完整片段。它验证不会导致解析崩溃，不代表实际运行会连续输出这些片段，也不验证插值值的硬件含义。
+
+当前 Release/Debug 的 AdaptstarSystemServiceToolLog4cpp.config.xml 使用 %date  %-5level - %message%newline；支持逗号/小数点毫秒、INFO/WARN/ERROR/FATAL/DEBUG/TRACE 及多行续行。
+
+运行 powershell -NoProfile -File .\validation\Run-Regression.ps1，验证结构化预期、缓存/旧版本失效及实际 MainViewModel 导入/筛选/MIXI/限值图表数据。缓存解析版本为 8，重新加载旧文件会重解析。
+
+删除通用字段服务后，真实 45.07 MiB LogAll 测得解析 2.908 秒、结构化缓存写入 1.351 秒；提取 186,408 个测试点和 299 个事件，数量与修改前一致。共享文件 SHA256 另耗时 4.274 秒；不含实际窗口绘制耗时。
+
+## 尚未证明的范围
+
+尚未证明所有业务格式 100% 正确：外部 DLL 输出、运行时拼接的所有参数组合、条件编译分支、特殊机型路径仍需实机样本。HVI 等仅有规则而未纳入固定场景的格式也需补独立验证。跨阶段耗时配对和校准改善量不从日志缺失或未经核实的 M/C 公式推导。图表像素、PNG 导出和硬件行为未在自动导入测试中验证。

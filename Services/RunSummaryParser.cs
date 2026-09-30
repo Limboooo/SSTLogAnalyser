@@ -6,6 +6,12 @@ namespace SSTLogAnalyser.Services;
 
 public static class RunSummaryParser
 {
+    public static bool IsSummaryFile(string path)
+    {
+        // Content recognition also supports renamed summaries and fixture filenames.
+        return File.ReadLines(path).Take(100).Any(line => Family.IsMatch(line.Trim()) ||
+            line.Contains("AutoTest Result Summary", StringComparison.Ordinal));
+    }
     private static readonly Regex NumberedItem = new(@"^\s*\d+\.\d+\)\s*(?<name>.+?)\s*\.{2,}\s*(?<status>PASSED|failed|Abort|Not Test|Not Applied)\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex AutoItem = new(@"^\s*Item\[(?<name>[^]]+)\],Result\[(?<status>PASSED|failed|Abort|Not Test|Not Applied)\]\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex FailedSlot = new(@"^\s*Slot-(?<slot>\d+(?:\(\d+\))?),\s*(?<board>[A-Z0-9]+),\s*\(--Fail--\)\s*$", RegexOptions.Compiled);

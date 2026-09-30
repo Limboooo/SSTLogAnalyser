@@ -8,13 +8,13 @@ namespace SSTLogAnalyser.Services;
 public static class DiagnosticLogParser
 {
     private const string Number = @"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?";
-    private static readonly Regex Diagnosis = new(@"^(?<module>DPSI|DPS|PMU|PE|PPMU|MVPI|HVPI|MXVI|Line Resistance|PE Leakage)(?: K)? Diagnosis (?<status>Pass|Fail|pass|fail)\.\s*(?:Slot:\s*(?<slot>\d+)\s*)?(?:Channel:\s*(?<channel>\d+)\s*)?(?:Pin:\s*(?<pin>\d+)\s*)?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex Diagnosis = new(@"^(?<module>DPSI|DPS|PMU|PE|PPMU|MVPI|HVPI|MXVI|Line Resistance|PE Leakage|Pin List|Channel List)(?: K)? Diagnosis (?<status>Pass|Fail|pass|fail)\.\s*(?:Slot:\s*(?<slot>\d+)\s*)?(?:Channel:\s*(?<channel>\d+)\s*)?(?:Pin:\s*(?<pin>\d+)\s*)?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex MxviShort = new(@"^MXVI Short\s+(?<direction>\w+)\s*\|\s*Channel:\s*(?<channel>\d+)\s*\((?<mode>FI|FV)\)\s*\|\s*Status:\s*(?<status>PASS|FAIL)\s*\|", RegexOptions.Compiled);
     private static readonly Regex Leakage = new(@"^(?:I Range\s*=\s*(?<range>\d+)uA\s*,\s*)?PMU channel:\s*(?<channel>\d+) have Leakage of PPMU:\s*(?<value>" + Number + @")(?<tail>.*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex PinZero = new(@"^\[PPMU_PIN_TO_PIN_ZERO\]\s*Range=(?<range>[^,]+),\s*RefPin=(?<ref>\d+),\s*TargetPin=(?<pin>\d+),\s*PairZero=(?<value>" + Number + @")A", RegexOptions.Compiled);
     private static readonly Regex Resistor = new(@"^Resistor:\s*(?<name>.+?)\s+Value:\s*(?<target>" + Number + @")\s+MeasureValue:\s*(?<value>" + Number + @")\s+Resule:\s*(?<status>\S+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex FlashMismatch = new(@"^HVPI channel\s+(?<channel>\d+)\s+(?<item>.+?):\s*Flash M/C mismatch\.\s*Write=\((?<wm>[^,]+),\s*(?<wc>[^)]+)\),\s*Read=\((?<rm>[^,]+),\s*(?<rc>[^)]+)\)", RegexOptions.Compiled);
-    private static readonly Regex FftMetric = new(@"^(?<item>Frequency|Waveform Max|Waveform Min|Waveform Mean|SNR|THD)\s*\|\s*(?<value>" + Number + @")\s*(?<unit>Hz|V|dB)\s*\|.+\|\s*(?<status>PASS|FAIL)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex FftMetric = new(@"^(?<item>Frequency|Waveform Max|Waveform Min|Waveform Mean|SNR|THD)\s*\|\s*(?<value>" + Number + @"|NaN|[-+]?Infinity)\s*(?<unit>Hz|V|dB)\s*\|.+\|\s*(?<status>PASS|FAIL)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public static bool TryParse(string message, string timestamp, int lineNumber, int loopIndex, out DiagnosticObservation observation)
     {
@@ -33,7 +33,7 @@ public static class DiagnosticLogParser
             channel = Int(match.Groups["channel"]);
             status = Status(match.Groups["status"].Value);
             // The checked quantity is MV for an FI channel, MI for an FV channel.
-            var check = Regex.Match(line, @"\|\s*Check\s+(?<unit>MV|MI):\s*(?<value>" + Number + @")\s*\[(?<low>" + Number + @"),\s*(?<high>" + Number + @")\]");
+            var check = Regex.Match(line, @"\|\s*Check\s+(?<unit>MV|MI):\s*(?<value>" + Number + @")\s*\[\s*(?<low>" + Number + @"),\s*(?<high>" + Number + @")\s*\]");
             if (check.Success)
             {
                 value = Double(check.Groups["value"]); low = Double(check.Groups["low"]); high = Double(check.Groups["high"]);
@@ -56,6 +56,12 @@ public static class DiagnosticLogParser
                 value = Field(line, module == "LINE RESISTANCE" ? @"Calculate Res\s*=" : @"TestResult\s*=");
                 unit = "ohm";
                 low = Field(line, @"Min Res:"); high = Field(line, @"Max Res:");
+                if (module == "LINE RESISTANCE" && !value.HasValue)
+                {
+                    item = "Line Resistance voltage precheck"; unit = "V";
+                    value = Field(line, @"Mesure Volt:"); target = Field(line, @"FV:");
+                    low = Field(line, @"Min Volt:"); high = Field(line, @"Max Volt:");
+                }
             }
             else
             {
@@ -110,6 +116,18 @@ public static class DiagnosticLogParser
             // Metric lines do not repeat Slot/DTZ Channel. Keep them unknown here.
             kind = "Diagnosis"; module = "MIXI"; item = "FFT " + match.Groups["item"].Value;
             value = Double(match.Groups["value"]); unit = match.Groups["unit"].Value; status = Status(match.Groups["status"].Value);
+            var specification = line.Split('|')[2].Trim();
+            var targetMatch = Regex.Match(specification, @"^(?<target>" + Number + @")\s*(?:V|Hz)");
+            if (targetMatch.Success) target = Double(targetMatch.Groups["target"]);
+            var tolerance = Regex.Match(specification, @"\+/-\s*(?<limit>" + Number + @")\s*V");
+            if (tolerance.Success && target.HasValue)
+            { limit = Double(tolerance.Groups["limit"]); low = target - limit; high = target + limit; }
+            var bound = Regex.Match(specification, @"^(?<operator>>=|<=)\s*(?<value>" + Number + @")\s*dB");
+            if (bound.Success)
+            {
+                if (bound.Groups["operator"].Value == ">=") low = Double(bound.Groups["value"]);
+                else high = Double(bound.Groups["value"]);
+            }
         }
         else return false;
 
@@ -137,7 +155,7 @@ public static class DiagnosticLogParser
     }
 
     private static int? Int(Group group) => group.Success && int.TryParse(group.Value, out var value) ? value : null;
-    private static double? Double(Group group) => group.Success && double.TryParse(group.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) ? value : null;
+    private static double? Double(Group group) => group.Success && double.TryParse(group.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : null;
     private static double? Field(string line, string label)
     {
         var match = Regex.Match(line, label + @"\s*(?<number>" + Number + @")", RegexOptions.IgnoreCase);
