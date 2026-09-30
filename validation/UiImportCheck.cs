@@ -52,6 +52,32 @@ static class UiImportCheck
                         Check(values.Length == 12 && values.Select(p => p.X).Distinct().Count() == 12, name + " has a drawable -3..8 sweep");
                         Check(values.All(p => Math.Abs(p.Y!.Value) >= 0.001), name + " carries nonzero error bounds");
                     }
+                    var sweepFile = model.LoadedFiles.Single(p => p.FileName == "21_DPS_Sweep_LogAll.log");
+                    model.BaselineFile = sweepFile;
+                    model.CurrentComparisonFile = sweepFile;
+                    Check(model.BaselineLoop == 2 && model.CurrentComparisonLoop == 2, "latest Loop selected independently");
+                    model.BaselineLoop = 1;
+                    model.CurrentComparisonLoop = 2;
+                    await model.CompareBaselineCommand.ExecuteAsync(null);
+                    Check(model.ComparisonSummary.Contains("Matched 24") && model.ComparisonSummary.Contains("New failures 2"), "comparison reads selected cached Loops");
+                    Check(model.ComparisonRows.Count == 2 && model.ComparisonRows.All(p => p.Status == "New failure"), "attention view defaults to anomalies");
+                    Check(model.ComparisonSeries.Length == 6, "selection builds two error and four limit curves");
+                    model.ComparisonFilter = "All";
+                    Check(model.ComparisonRows.Count == 24, "all comparison rows available");
+                    model.ComparisonSearch = "Ch0";
+                    Check(model.ComparisonRows.Count == 12, "comparison independent channel search");
+                    model.ComparisonSearch = string.Empty;
+                    model.CurrentComparisonLoop = 1;
+                    Check(model.ComparisonRows.Count == 0 && model.ComparisonSeries.Length == 0, "selection change clears stale results");
+                    await model.CompareBaselineCommand.ExecuteAsync(null);
+                    Check(model.ComparisonRows.Count == 24 && model.ComparisonRows.All(p => p.Status == "Within limits"), "same Loop self comparison stable");
+                    await model.LoadFilesFromPathsAsync(new[] { Path.Combine(fixtures, "22_Comparison_Baseline.log"), Path.Combine(fixtures, "23_Comparison_Current.log") });
+                    model.BaselineFile = model.LoadedFiles.Single(p => p.FileName == "22_Comparison_Baseline.log");
+                    model.CurrentComparisonFile = model.LoadedFiles.Single(p => p.FileName == "23_Comparison_Current.log");
+                    model.ComparisonFilter = "New failure";
+                    await model.CompareBaselineCommand.ExecuteAsync(null);
+                    Check(model.ComparisonRows.Count == 2 && model.ComparisonRows.All(p => p.Status == "New failure"), "two separate files compare with own Loops");
+                    Check(model.ComparisonChartSummary.Contains("22_Comparison_Baseline.log") && model.ComparisonChartSummary.Contains("23_Comparison_Current.log"), "both file names and source lines displayed");
                 }
                 catch (Exception ex) { failure = ex; }
                 finally

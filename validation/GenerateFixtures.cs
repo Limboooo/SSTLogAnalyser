@@ -261,6 +261,9 @@ static class GenerateFixtures
             }
         }
         Save("21_DPS_Sweep_LogAll.log", sweep);
+        var secondLoop = sweep.FindIndex(p => p.EndsWith("Index 2 of 2", StringComparison.Ordinal));
+        Save("22_Comparison_Baseline.log", sweep.Take(secondLoop).Select(p => p.Replace("Index 1 of 2", "Index 1 of 1", StringComparison.Ordinal)));
+        Save("23_Comparison_Current.log", sweep.Skip(secondLoop).Select(p => p.Replace("Index 2 of 2", "Index 1 of 1", StringComparison.Ordinal)));
         File.WriteAllText(Path.Combine(directory, "SOURCE_HASHES.json"), JsonSerializer.Serialize(hashes,
             new JsonSerializerOptions { WriteIndented = true }) + "\n", new UTF8Encoding(false));
     }

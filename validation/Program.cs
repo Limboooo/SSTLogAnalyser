@@ -203,4 +203,5 @@ finally
     if (Directory.Exists(cacheDirectory)) Directory.Delete(cacheDirectory, true);
 }
 checks += UiImportCheck.Run(fixtureDirectory);
+checks += ComparisonCheck.Run();
 Console.WriteLine($"PASS: {checks} assertions. Parser, summaries, process logs, attribution, import ViewModel and isolated cache verified.");

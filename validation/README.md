@@ -29,6 +29,8 @@
 | `19_MIXI_FFT_LogAll.log` | 实际多行 FFT 块：整体 Fail、6 个指标、NaN 和 V/dB 限值 |
 | `20_MXVI_Short_Resistor_LogAll.log` | MXVI FI/FV 两种 Check、实际 F8 补空格范围及 Resule 电阻判定 |
 | `21_DPS_Sweep_LogAll.log` | 参照 2026-02-04 实际日志的 -3..8 V DPS 扫描；2 通道、2 Loop，共 48 点、2 点超限；上下限为误差边界 ±(0.001 + |Expect| × 0.0005) |
+| `22_Comparison_Baseline.log` | 对比基准，2 通道、单 Loop、24 点，全部在限值内 |
+| `23_Comparison_Current.log` | 对比当前文件，24 点，其中 2 点超限；与 22 配对后应有 2 个新增失败点 |
 
 曲线验证请优先使用 `21_DPS_Sweep_LogAll.log`，选择 DPS / Force Voltage / Channel 0 / Loop 1。`01` 是最小解析样本，其中 DC 双点现已改为 Expect=0 和 1，避免同一横坐标导致限值线退化；PE/PPMU 单点及纯 CAL、事件样本仍不适合验证连续限值曲线。2026-09-30 本次回归为 925 项断言通过，含 15 项实际导入及曲线数据检查；未执行窗口像素验证。
 
@@ -91,7 +93,9 @@ powershell -NoProfile -File .\validation\Run-Regression.ps1 -Generate
 
 数值、通道和组合是用于软件验证的测试设计；不是完整硬件配置或所有 Trunk 输出格式的覆盖。自动回归不启动 WPF 界面，图表视觉、点击操作及 PNG 导出仍需按上面的界面步骤检查。将来有实机 LOG 时应补充真实样本验证。
 
-按用户要求已移除 All Log Lines、通用字段提取及原文缓存。实际 ViewModel 导入和 MIXI / High / Low Limit 图表数据链仍参与回归，但不打开窗口。当前回归为 860 项断言、10 项导入链检查；上文 925 项为删除该功能前的历史结果。
+按用户要求已移除 All Log Lines、通用字段提取及原文缓存。当前回归为 998 项断言，包含 20 项实际导入/图表/基准对比页面数据链检查及 22 项匹配规则检查。上文 925 项为历史结果。
+
+`ComparisonCheck.cs` 验证新增/恢复/持续失败、80% 临界点、缺失/新增点、重复和浮点歧义、限值放宽、负误差改善、无效限值、MIXI 同 Target 不同组成、Slot/Component/测试项隔离，以及 10 万点匹配。`UiImportCheck.cs` 验证独立文件/Loop、默认最后 Loop、筛选与搜索、双误差/四限值曲线和更换选择后旧结果清空。窗口像素和 PNG 导出不在这些自动检查范围内。
 
 刷新源码候选输出点清单及模板语料：
 

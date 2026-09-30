@@ -527,6 +527,27 @@ Data 标签页以表格形式展示当前图表中所有原始测试数据，列
 
 ## 多文件对比
 
+### 基准 LOG 对比（Baseline Comparison）
+
+1. 导入两份 LOG，进入 Baseline Comparison 页。
+2. Baseline 选择确认正常的基准文件，Current 选择本次文件；各选一个 Loop。默认最后一个有测试点的 Loop，0 表示 Initial。
+3. 点击 Compare。Attention 默认显示需关注项；All 显示全部。也可筛选新增失败、恢复通过、缺失点或限值变化，并按模块、测试项、Ch 编号搜索。
+4. 点击结果，查看该通道双方的误差曲线、上下限、RMS、最大绝对误差、失败点数及最差容差利用率。行号用于回查两份原始 LOG。
+
+图表位于中间主体区域，结果表格位于下方；拖动两者之间的灰色横向分隔线，可调整图表和表格的高度比例。
+
+试用：导入 `validation/fixtures/22_Comparison_Baseline.log` 和 `23_Comparison_Current.log`，分别作为 Baseline / Current，双方选 Loop 1，预期匹配 24 点、发现 2 个新增失败点。也可以使用 `21_DPS_Sweep_LogAll.log`，同一文件 Loop 1 对比 Loop 2，得到相同结果。
+
+匹配要求模块、测试项、Slot、通道、Component 和扫描值一致；MIXI 还检查 WAVE、OFFSET、DIFF。测试项名称不同不会自动映射，极小浮点序列化差异允许匹配，实际不同扫描点不会按最近值配对。
+
+Delta error = 当前误差 - 基准误差；Delta |error| = 当前绝对误差 - 基准绝对误差，正值表示绝对误差变大。不要仅凭 Delta error 的正负判断改善。容差利用率围绕上下限中点计算，80% 及以上视为接近限值。
+
+Limits changed 独立提示上下限变化，Under baseline limits 显示当前误差使用旧标准检查的结果。MIXI 的测量上下限先减 Target，再与误差曲线比较。Pass / Fail 后的 calculated 表示根据有效限值计算，recorded 表示存在明确源结果。
+
+重复或 Re-test 记录显示 Duplicate / ambiguous，不自动取最后一条。曲线保留重复/缺失点；统计仅基于唯一匹配的有效数值点。更换文件或 Loop 后须重新 Compare，结果不受主页面全局筛选影响。
+
+第一版支持 DC/MIXI 数值点；AC/TMU、无有效上下限及未知格式显示 Unknown / unsupported。Missing point 表示基准中存在的已解析点没有当前对应记录，不能据此断言实机没有执行该测试。
+
 SST Log Analyser 支持同时加载多个日志文件，进行跨文件的数据对比。
 
 ### 加载多个文件
@@ -754,6 +775,14 @@ CREATE TABLE system_info (
 
 ## 版本历史
 
+### v1.2.6 (2026-09-30)
+
+- 新增基准 LOG 对比页、独立文件/Loop 选择、异常清单及联动误差/限值曲线。
+- 支持缺失/新增/歧义点、限值变化提示及按基准限值检查。
+- 新增两份对比样本，998 项回归断言通过；说明见 [v1.2.6 更新说明](RELEASE_NOTES_v1.2.6.md)。
+- 基准对比页以图表为主体、表格在下方，拖动灰色分隔线调整高度。
+- 提供包含 .NET 运行环境的 Windows x64 安装包与分享压缩包，附两份对比样本和使用说明。
+
 ### v1.2.5 (2026-09-30)
 
 - 补充 AC/TMU 校准和过程汇总、寄存器判定、Sigma、MIXI FFT 解析，修正诊断单位、MXVI Short 范围及非法数字处理。
@@ -833,6 +862,6 @@ CREATE TABLE system_info (
 
 ---
 
-**文档版本：** 1.2.5
+**文档版本：** 1.2.6
 **最后更新：** 2026-09-30
 **作者：** SST Log Analyser Team

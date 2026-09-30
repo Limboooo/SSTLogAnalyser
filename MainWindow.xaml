@@ -618,6 +618,71 @@
                         </DataGrid>
                     </Grid>
                 </TabItem>
+                <TabItem Header="Baseline Comparison">
+                    <Grid Margin="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                            <RowDefinition Height="3*" MinHeight="160"/>
+                            <RowDefinition Height="8"/>
+                            <RowDefinition Height="2*" MinHeight="110"/>
+                        </Grid.RowDefinitions>
+                        <WrapPanel>
+                            <TextBlock Text="Baseline" VerticalAlignment="Center" Margin="4"/>
+                            <ComboBox Width="270" ItemsSource="{Binding LoadedFiles}" DisplayMemberPath="FileName" SelectedItem="{Binding BaselineFile}"/>
+                            <TextBlock Text="Loop" VerticalAlignment="Center" Margin="6"/>
+                            <ComboBox Width="65" ItemsSource="{Binding BaselineLoops}" SelectedItem="{Binding BaselineLoop}"/>
+                            <TextBlock Text="Current" VerticalAlignment="Center" Margin="12,4,4,4"/>
+                            <ComboBox Width="270" ItemsSource="{Binding LoadedFiles}" DisplayMemberPath="FileName" SelectedItem="{Binding CurrentComparisonFile}"/>
+                            <TextBlock Text="Loop" VerticalAlignment="Center" Margin="6"/>
+                            <ComboBox Width="65" ItemsSource="{Binding CurrentComparisonLoops}" SelectedItem="{Binding CurrentComparisonLoop}"/>
+                            <Button Content="Compare" Command="{Binding CompareBaselineCommand}"/>
+                        </WrapPanel>
+                        <TextBlock Grid.Row="1" Text="{Binding ComparisonSummary}" TextWrapping="Wrap" Margin="4,8"/>
+                        <TextBlock Grid.Row="2" Text="{Binding ComparisonChartSummary}" TextWrapping="Wrap" Margin="4,6"/>
+                        <lvc:CartesianChart Grid.Row="3" Series="{Binding ComparisonSeries}" XAxes="{Binding ComparisonXAxes}"
+                                            YAxes="{Binding ComparisonYAxes}" LegendPosition="Top" AnimationsSpeed="0:0:0" ZoomMode="Both"/>
+                        <GridSplitter Grid.Row="4" Height="8" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                      Background="#CDD2D8" Cursor="SizeNS" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                                      ShowsPreview="True" ToolTip="Drag to resize the chart and results table"/>
+                        <Grid Grid.Row="5">
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                        <StackPanel Orientation="Horizontal" Margin="4,6,4,6">
+                            <TextBlock Text="Show" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ComboBox Width="175" ItemsSource="{Binding ComparisonFilters}" SelectedItem="{Binding ComparisonFilter}"/>
+                            <TextBlock Text="Module / Item / Channel" VerticalAlignment="Center" Margin="12,0,6,0"/>
+                            <TextBox Width="230" Text="{Binding ComparisonSearch, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding ComparisonRows}" SelectedItem="{Binding SelectedComparisonRow}"
+                                  AutoGenerateColumns="False" IsReadOnly="True" EnableRowVirtualization="True" EnableColumnVirtualization="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling" SelectionMode="Single">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Result" Binding="{Binding Status}" Width="150"/>
+                                <DataGridCheckBoxColumn Header="Limits changed" Binding="{Binding LimitsChanged}"/>
+                                <DataGridTextColumn Header="Module" Binding="{Binding Module}"/>
+                                <DataGridTextColumn Header="Test Item" Binding="{Binding TestItem}" Width="210"/>
+                                <DataGridTextColumn Header="Ch / Pin" Binding="{Binding Channel}"/>
+                                <DataGridTextColumn Header="Slot (-1 unknown)" Binding="{Binding Slot}"/>
+                                <DataGridTextColumn Header="Expect" Binding="{Binding Expect, StringFormat=G8}"/>
+                                <DataGridTextColumn Header="Component" Binding="{Binding Component}"/>
+                                <DataGridTextColumn Header="WAVE" Binding="{Binding Wave, StringFormat=G8}"/>
+                                <DataGridTextColumn Header="OFFSET" Binding="{Binding Offset, StringFormat=G8}"/>
+                                <DataGridTextColumn Header="Baseline error" Binding="{Binding BaselineError, StringFormat=G8}"/>
+                                <DataGridTextColumn Header="Current error" Binding="{Binding CurrentError, StringFormat=G8}"/>
+                                <DataGridTextColumn Header="Delta error" Binding="{Binding ErrorChange, StringFormat=G8}"/>
+                                <DataGridTextColumn Header="Delta |error|" Binding="{Binding AbsoluteErrorChange, StringFormat=G8}"/>
+                                <DataGridTextColumn Header="Baseline usage" Binding="{Binding BaselineUtilization, StringFormat=P1}"/>
+                                <DataGridTextColumn Header="Current usage" Binding="{Binding CurrentUtilization, StringFormat=P1}"/>
+                                <DataGridTextColumn Header="Current margin" Binding="{Binding CurrentMargin, StringFormat=G8}"/>
+                                <DataGridTextColumn Header="Baseline verdict" Binding="{Binding BaselineVerdict}"/>
+                                <DataGridTextColumn Header="Current verdict" Binding="{Binding CurrentVerdict}"/>
+                                <DataGridTextColumn Header="Under baseline limits" Binding="{Binding UnderBaselineLimits}"/>
+                                <DataGridTextColumn Header="Baseline lines" Binding="{Binding BaselineLines}"/>
+                                <DataGridTextColumn Header="Current lines" Binding="{Binding CurrentLines}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        </Grid>
+                    </Grid>
+                </TabItem>
                 <TabItem x:Name="DiagnosticsTab">
                     <TabItem.Header>
                         <StackPanel Orientation="Horizontal">

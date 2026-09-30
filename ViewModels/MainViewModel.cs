@@ -130,6 +130,7 @@ public partial class MainViewModel : ObservableObject
     {
         _cache = cache;
         _parser = parser;
+        LoadedFiles.CollectionChanged += (_, _) => RefreshComparisonFiles();
         SelectedChannels.CollectionChanged += (_, _) =>
         {
             if (_isUpdatingChannelSelection) return;
