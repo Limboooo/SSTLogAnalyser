@@ -1,0 +1,9 @@
+2026-09-30 10:00:00,000 INFO  - Index 1 of 1
+2026-09-30 10:00:00,000 INFO  - DPSI Diagnosis Pass. Slot: 2 Channel: 200 FV: 1 Measure result: 1.0002
+2026-09-30 10:00:00,000 ERROR  - DPSI Diagnosis Fail. Slot: 2 Channel: 201 FV: 1 Measure result: 1.02
+2026-09-30 10:00:00,000 INFO  - PMU channel: 0 have Leakage of PPMU: 3E-08 out of expect range (-1E-08 =< M <= 1E-08).
+2026-09-30 10:00:00,000 INFO  - I Range=2uA , PMU channel: 1 have Leakage of PPMU: 2E-09
+2026-09-30 10:00:00,000 INFO  - [PPMU_PIN_TO_PIN_ZERO] Range=2uA, RefPin=0, TargetPin=1, PairZero=1E-09A, InactivePins=DISCONNECTED
+2026-09-30 10:00:00,000 INFO  - ,2,0,256,35,
+2026-09-30 10:00:00,000 INFO  - ,2,0,258,85, Warning!!
+2026-09-30 10:00:00,000 INFO  - HVPI channel 200 FV: Flash M/C mismatch. Write=(1.0001, -0.0002), Read=(1, 0)

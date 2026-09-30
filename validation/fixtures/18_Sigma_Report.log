@@ -1,0 +1,9 @@
+***************** Sigma Report Result Summary ******************
+Instrument: DIGITAL_SIM-SN
+,Module,Channel,Target,Count,Sigma
+,DPS,0,1,10,0.0002
+,PMU,1,1,10,0.0003
+***************** End of Sigma Report Result Summary ******************
+0.9998
+1.0000
+1.0002

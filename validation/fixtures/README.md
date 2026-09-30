@@ -1,0 +1,13 @@
+# SST 模拟日志
+
+本目录的 20 份 `.log` / `.txt` 文件是根据 Trunk SST 输出代码构造的合成样本，不是实机测量记录。将文件直接导入 SSTLogAnalyser，即可用于人工验证及未来功能回归。
+
+- `01`–`07`：DC、AC、TMU、诊断事件、纯 CAL 和 MIXI 误差归因。
+- `08`–`11`：Passed、Failed、Aborted Summary 和 AutoTest 结果。
+- `12`–`16`：AC/TMU 过程、寄存器、异常输入及诊断格式。
+- `17_Trunk_OutputTemplates.log`：源码输出模板语料，包含占位符和不完整片段，仅用于原文保留和容错测试。
+- `18`–`20`：Sigma、MIXI FFT、MXVI Short / Resistor。
+
+建议先使用 `01_DC_LogAll.log` 和 `06_MIXI_Attribution_LogAll.log`，再分别导入其他样本。`SOURCE_HASHES.json` 记录生成样本时参考的源码哈希，不需要导入 APP。
+
+模拟样本能够覆盖已知格式和边界输入，不能替代实机日志对 DLL 输出及特殊运行路径的验证。

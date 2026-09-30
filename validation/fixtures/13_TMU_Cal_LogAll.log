@@ -1,0 +1,10 @@
+2026-09-30 10:00:00,000 INFO  - ******************************Tmu Path Cal Summary Log******************************
+2026-09-30 10:00:00,000 INFO  - Tmu0 Result
+2026-09-30 10:00:00,000 INFO  - PinNumber , VolStart_VolStop(ns) , VohStart_VohStop(ns) , VolPath(ns) , VohPath(ns) , VolStart_VolStop(ns) , VolStart_VohStop(ns) , VohStart_VolStop(ns) , VolPinDiff(ns) , VohPinDiff(ns) :
+2026-09-30 10:00:00,000 INFO  - Pin0000 , 10.010 , 9.990 , 10.000 , 10.020 , 0.010 , -0.010 , 0.000 , 0.020 , -0.020 ; 
+2026-09-30 10:00:00,000 INFO  - Tmu1 Result
+2026-09-30 10:00:00,000 INFO  - Pin0000 , 10.020 , 9.980 , 10.010 , 10.030 , 0.020 , -0.020 , 0.010 , 0.030 , -0.030 ; 
+2026-09-30 10:00:00,000 INFO  - Pin0000 : FMEA = 1000000Hz : Calibration Value - 0.078ns ,EC = 12ppm
+2026-09-30 10:00:00,000 INFO  - Pass : Pin0001 : FMEA = 1000000Hz ;EC = 12
+2026-09-30 10:00:00,000 INFO  - Fail : Pin0002 : FMEA = 1000000Hz ;EC = 120ppm,Expect EC between -50ppm ~ 50ppm
+2026-09-30 10:00:00,000 INFO  - FAIL - FMU-02 Calibration

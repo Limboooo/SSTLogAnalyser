@@ -1,0 +1,4 @@
+***************** AutoTest Result Summary ******************
+Item[DIGI_AC_VERIFY_],Result[PASSED]
+Item[DIGI_DC_DIAG_DPS],Result[failed]
+***************** End of AutoTest Result Summary ******************

@@ -1,0 +1,25 @@
+**         AAA         BBBBBBBB         OOOOOO      RRRRRRRR      TTTTTTTTTTT   **
+**        AA AA        BB      BB     OO      OO    RR     RR         TTT       **
+**        AA AA        BB       BB   OO        OO   RR       RR       TTT       **
+**       AA   AA       BB       BB   OO        OO   RR       RR       TTT       **
+**       AA   AA       BB      BB    OO        OO   RR       RR       TTT       **
+**      AAAAAAAAA      BBBBBBBB      OO        OO   RR     RR         TTT       **
+**      AA     AA      BB      BB    OO        OO   RRRRRRRR          TTT       **
+**     AA       AA     BB       BB   OO        OO   RR     RR         TTT       **
+**     AA       AA     BB       BB   OO        OO   RR      RR        TTT       **
+**    AA         AA    BB      BB     OO      OO    RR       RR       TTT       **
+**   AAA         AAA   BBBBBBBB         OOOOOO      RR       RR       TTT       **
+**                                                                              **
+**********************************************************************************
+**********************************************************************************
+
+**************** AStar SST Summary *************************
+Tester S/N: SIMULATED-TESTER-ONLY
+Operator: SIMULATED
+Date: 2026-09-30
+Slot-2: DIGI-2,   S/N:   SIM-DIGI-002
+1.1) DPS DC Calibration ........   PASSED
+1.4) PPMU DC Calibration .......   Not Test
+1.5) Write to Flash ............   Not Applied
+3.1) DPS DC Verification ........   Abort
+***************** End of AStar SST Summary ******************

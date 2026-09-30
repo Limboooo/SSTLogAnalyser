@@ -1,0 +1,11 @@
+2026-09-30 10:00:00,000 INFO  - DPS Channel 0: V, -3, 8, Force Voltage Verification
+2026-09-30 10:00:00,000 INFO  - ,Expect,DmmMeasure,LowLimit,UpLimit,Difference,
+2026-09-30 10:00:00,000 INFO  - ,1,NOT_A_NUMBER,-0.001,0.001,0,
+2026-09-30 10:00:00,000 INFO  - ,1,NaN,-0.001,0.001,0,
+2026-09-30 10:00:00,000 INFO  - ,1,Infinity,-0.001,0.001,0,
+2026-09-30 10:00:00,000 WARN  - unrecognized future module payload αβ 中文
+  continuation preserves leading spaces  
+
+  
+2026-09-30 10:00:00,000 ERROR  - ERROR is a log level, not a verdict
+2026-09-30 10:00:00,000 DEBUG  - unknown field Slot=2; NewCounter=123; flags=0b10

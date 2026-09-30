@@ -1,0 +1,7 @@
+2026-09-30 10:00:00,000 INFO  - ======= Start DPS Register Diagnostics ======
+2026-09-30 10:00:00,000 INFO  - Channel : 0 -- Pass
+2026-09-30 10:00:00,000 INFO  - Channel : 1 Addr : 0x00000530 Indata Index : 0x00000002 -- Fail
+2026-09-30 10:00:00,000 DEBUG  -  Addr : 0x00000530 Write Data: 0x00000002 Read Data : 0x00000001 Mask : 0xFFFFFFFF
+2026-09-30 10:00:00,000 INFO  - ======= End DPS Register Diagnostics ======
+2026-09-30 10:00:00,000 INFO  - HVPI channel 200: Flash Write failed.
+2026-09-30 10:00:00,000 INFO  - HVPI channel 201: Flash readback failed.

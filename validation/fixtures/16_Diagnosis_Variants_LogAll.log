@@ -1,0 +1,6 @@
+2026-09-30 10:00:00,000 INFO  - Pin List Diagnosis Fail. Pin: 0 Force voltage: 1 Min: 0.9 Max: 1.1 Mesure Voltage: 1.2
+2026-09-30 10:00:00,000 INFO  - Channel List Diagnosis Pass. Slot: 2 Channel: 200 FV: 1 Measure result: 1.0001
+2026-09-30 10:00:00,000 INFO  - Line Resistance Diagnosis Fail. Pin: 1, 0 FV: 1 Min Volt: 0.9 Max Volt: 1.1 Mesure Volt: 1.2
+2026-09-30 10:00:00,000 INFO  - Line Resistance Diagnosis Pass. Pin: 1, 0 Calculate Res= 2ohm; Min Res: 1ohm Max Res: 3ohm FV: 1V MV: (1V, 0V) MI: 0.5A
+2026-09-30 10:00:00,000 INFO  - PE Leakage Diagnosis Pass. Pin: 0,TestResult =1000000 ohm; MI = (1E-09A,2E-09A)
+2026-09-30 10:00:00,000 INFO  - PPMU Diagnosis fail. Pin: 0 Force Voltage: 1 Expect value : 0b11 Compare status : 0b10

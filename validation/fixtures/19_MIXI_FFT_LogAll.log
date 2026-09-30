@@ -1,0 +1,11 @@
+2026-09-30 10:00:00,000 INFO  - ========== MIXI FFT ANALYSIS ==========
+2026-09-30 10:00:00,000 INFO  - Result    : FAIL
+2026-09-30 10:00:00,000 INFO  - Slot      : 2
+2026-09-30 10:00:00,000 INFO  - DTZ CH    : 200
+2026-09-30 10:00:00,000 INFO  - Metric | Measured | Target / Limit | Result
+2026-09-30 10:00:00,000 INFO  - Frequency | 1000 Hz | 1000 Hz, Error 0% / Limit 1% | PASS
+2026-09-30 10:00:00,000 INFO  - Waveform Max | 1.01 V | 1 V +/- 0.02 V | PASS
+2026-09-30 10:00:00,000 INFO  - Waveform Min | -1.01 V | -1 V +/- 0.02 V | PASS
+2026-09-30 10:00:00,000 INFO  - Waveform Mean | NaN V | 0 V +/- 0.01 V | FAIL
+2026-09-30 10:00:00,000 INFO  - SNR | 80 dB | >= 70 dB | PASS
+2026-09-30 10:00:00,000 INFO  - THD | -40 dB | <= -60 dB | FAIL
