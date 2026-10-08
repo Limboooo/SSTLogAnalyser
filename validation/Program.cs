@@ -195,6 +195,32 @@ try
             "outdated cache child rows removed");
         cache.InsertLogFile(parsed["01"].FileInfo, "unfinished-import");
         Check(cache.FindFileByHash("unfinished-import") == null, "unfinished import cannot be reused as a complete cache");
+
+        // Single-transaction import used by the UI: complete on success, no partial rows on failure.
+        var full = parsed["01"];
+        var importedId = cache.ImportParseResult(full, "atomic-import");
+        Check(cache.FindFileByHash("atomic-import") == importedId, "transactional import marked complete");
+        Check(cache.QueryTestResults(new[] { importedId }, null, null, null, null).Count == full.TestResults.Count &&
+            cache.GetErrors(new[] { importedId }).Count == full.Errors.Count &&
+            cache.GetDevices(new[] { importedId }).Count == full.Devices.Count &&
+            cache.GetSystemInfos(new[] { importedId }).Count == full.SystemInfos.Count &&
+            cache.GetDiagnosticObservations(new[] { importedId }).Count == full.DiagnosticObservations.Count,
+            "transactional import writes every table");
+        long CountRows(string table)
+        {
+            using var db = new SqliteConnection("Data Source=" + Path.Combine(cacheDirectory, "cache.db"));
+            db.Open();
+            using var command = db.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM " + table;
+            return (long)command.ExecuteScalar()!;
+        }
+        var filesBefore = CountRows("log_files");
+        var pointsBefore = CountRows("test_results");
+        var duplicateRejected = false;
+        try { cache.ImportParseResult(full, "atomic-import"); }
+        catch (SqliteException) { duplicateRejected = true; }
+        Check(duplicateRejected && CountRows("log_files") == filesBefore && CountRows("test_results") == pointsBefore,
+            "failed import rolls back without partial rows");
     }
 }
 finally
@@ -202,6 +228,17 @@ finally
     SqliteConnection.ClearAllPools();
     if (Directory.Exists(cacheDirectory)) Directory.Delete(cacheDirectory, true);
 }
+// Chart sampling: drawn shape keeps extremes and order; envelope is exact on shared sweep points.
+var dense = Enumerable.Range(0, 10_000).Select(i => (X: i / 10.0, Y: Math.Sin(i / 50.0) + (i == 7_777 ? 5 : 0))).ToArray();
+var sampled = ChartDecimation.MinMax(dense, 1000);
+Check(sampled.Count <= 2000 && sampled.Max(p => p.Y) == dense.Max(p => p.Y) && dense.Max(p => p.Y) > 4 && sampled.Min(p => p.Y) == dense.Min(p => p.Y), "min/max sampling keeps peaks");
+Check(sampled.Zip(sampled.Skip(1)).All(p => p.First.X <= p.Second.X) && sampled[0] == dense[0] && sampled[^1] == dense[^1], "sampling keeps X order and ends");
+Check(ChartDecimation.MinMax(dense.Take(1500).ToArray(), 1000).Count == 1500, "short series not sampled");
+var envelope = ChartDecimation.Envelope(Enumerable.Range(0, 20).SelectMany(c => new[] { (0.0, c * 1.0), (1.0, -c * 1.0) }), 1000);
+Check(envelope.Count == 2 && envelope[0] == new EnvelopeBin(0, 0, 19, 9.5, 1, 18) && envelope[1].Min == -19 && envelope[1].Max == 0, "envelope per shared X with percentiles");
+Check(ChartDecimation.ThinScatter(dense, 5000, 100, 100).Count < dense.Length && ChartDecimation.ThinScatter(dense.Take(10).ToArray(), 5000, 100, 100).Count == 10,
+    "failed-point thinning only above the display limit");
+
 checks += UiImportCheck.Run(fixtureDirectory);
 checks += ComparisonCheck.Run();
 Console.WriteLine($"PASS: {checks} assertions. Parser, summaries, process logs, attribution, import ViewModel and isolated cache verified.");

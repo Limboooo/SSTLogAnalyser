@@ -24,13 +24,16 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private Axis[] _yAxes = Array.Empty<Axis>();
     [ObservableProperty] private string _statusText = "Ready";
     [ObservableProperty] private int _progressValue;
-    [ObservableProperty] private bool _isLoading;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(LoadFilesCommand), nameof(ClearAllCommand))]
+    private bool _isLoading;
     [ObservableProperty] private string? _selectedModule;
     [ObservableProperty] private string? _selectedTestItem;
     [ObservableProperty] private bool _compareMultiChannel = true;
     [ObservableProperty] private bool _compareMultiLoop;
     [ObservableProperty] private bool _showLegend = true;
     [ObservableProperty] private bool _performanceMode;
+    [ObservableProperty] private ChartCurveMode _curveMode = ChartCurveMode.Auto;
     [ObservableProperty] private string _chartRenderSummary = string.Empty;
     [ObservableProperty] private TimeSpan _chartAnimationsSpeed = TimeSpan.FromMilliseconds(250);
     [ObservableProperty] private bool _tooltipVisible;
@@ -96,6 +99,13 @@ public partial class MainViewModel : ObservableObject
 
     private const int AutomaticFastSeriesThreshold = 128;
     private const int AutomaticFastPointThreshold = 50_000;
+    // Matches the palette size: beyond 12 curves colors repeat, so the chart switches to an envelope.
+    private const int EnvelopeSeriesThreshold = 12;
+    private const int EnvelopeWorstGroupCount = 8;
+    // About two drawn points per horizontal pixel on a wide chart.
+    private const int DecimationBuckets = 1000;
+    private const int MarkerPointLimit = 200;
+    private const int FailedPointDisplayLimit = 5000;
     private const int DiagnosticLargeSeriesThreshold = 256;
     private const int DiagnosticLargePointThreshold = 100_000;
     private const int DiagnosticDetailSeriesLimit = 64;
@@ -113,6 +123,16 @@ public partial class MainViewModel : ObservableObject
         int ChannelId,
         int LoopIndex,
         WaveOffsetAttribution Attribution);
+
+    // Opaque equivalents of the accent blue at ~18% and ~38% over white.
+    private static readonly SKColor EnvelopeOuterColor = new(219, 234, 249);
+    private static readonly SKColor EnvelopeInnerColor = new(179, 211, 242);
+
+    private static readonly SKColor[] WorstPalette =
+    {
+        SKColor.Parse("#D85A30"), SKColor.Parse("#534AB7"), SKColor.Parse("#0F6E56"), SKColor.Parse("#BA7517"),
+        SKColor.Parse("#D4537E"), SKColor.Parse("#185FA5"), SKColor.Parse("#639922"), SKColor.Parse("#8D6E63"),
+    };
 
     private static readonly SKColor[] Palette = new[]
     {
@@ -248,7 +268,9 @@ public partial class MainViewModel : ObservableObject
         UpdateDiagnostics();
     }
 
-    [RelayCommand]
+    private bool CanChangeFiles() => !IsLoading;
+
+    [RelayCommand(CanExecute = nameof(CanChangeFiles))]
     private async Task LoadFilesAsync()
     {
         var dialog = new OpenFileDialog
@@ -265,57 +287,33 @@ public partial class MainViewModel : ObservableObject
 
     private async Task LoadFilesInternalAsync(string[] paths)
     {
+        // Drag-and-drop bypasses the command's CanExecute, so reject overlapping imports here.
+        if (IsLoading)
+        {
+            StatusText = "Still loading files. Drop the new files again after the current import finishes.";
+            return;
+        }
+
         IsLoading = true;
         ProgressValue = 0;
         StatusText = "Loading files...";
+        var failures = new List<string>();
         try
         {
             foreach (var path in paths)
             {
-                StatusText = "Processing: " + Path.GetFileName(path);
                 var fileName = Path.GetFileName(path);
-                if (RunSummaryParser.IsSummaryFile(path))
+                StatusText = "Processing: " + fileName;
+                ProgressValue = 0;
+                // One unreadable or malformed file must not stop the rest of the batch.
+                try
                 {
-                    if (!RunSummaries.Any(s => string.Equals(s.SourceFile, path, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        var summary = RunSummaryParser.ParseFile(path);
-                        RunSummaries.Add(summary);
-                        SelectedRunSummary = summary;
-                    }
-                    StatusText = "Loaded run summary: " + fileName;
+                    await LoadFileAsync(path, fileName);
                 }
-                var hash = await FileHashService.ComputeSha256Async(path);
-                var existingId = _cache.FindFileByHash(hash);
-                if (existingId.HasValue)
+                catch (Exception ex)
                 {
-                    var info = _cache.GetFileInfo(existingId.Value);
-                    if (info != null && !LoadedFiles.Any(f => f.FileId == info.FileId))
-                        LoadedFiles.Add(info);
-                    StatusText = "Loaded from cache: " + Path.GetFileName(path);
-                    continue;
+                    failures.Add(fileName + " (" + ex.Message + ")");
                 }
-                var progress = new Progress<ParseProgress>(p =>
-                {
-                    Application.Current?.Dispatcher.Invoke(() =>
-                    {
-                        ProgressValue = p.Percent;
-                        StatusText = "Parsing " + Path.GetFileName(path) + ": " + p.Percent + "% (" + p.DataPoints + " data points)";
-                    });
-                });
-                var result = await _parser.ParseAsync(path, progress);
-                var fileId = _cache.InsertLogFile(result.FileInfo, hash);
-                result.FileInfo.FileId = fileId;
-                if (result.TestResults.Count > 0) _cache.InsertTestResults(fileId, result.TestResults);
-                if (result.CalibrationCoefficients.Count > 0)
-                    _cache.InsertCalibrationCoefficients(fileId, result.CalibrationCoefficients);
-                if (result.Devices.Count > 0) _cache.InsertDevices(fileId, result.Devices);
-                if (result.Errors.Count > 0) _cache.InsertErrors(fileId, result.Errors);
-                if (result.DiagnosticObservations.Count > 0)
-                    _cache.InsertDiagnosticObservations(fileId, result.DiagnosticObservations);
-                if (result.SystemInfos.Count > 0) _cache.InsertSystemInfos(fileId, result.SystemInfos);
-                _cache.MarkFileComplete(fileId);
-                LoadedFiles.Add(result.FileInfo);
-                StatusText = "Parsed: " + Path.GetFileName(path) + " (" + result.TestResults.Count + " data points)";
             }
             RefreshFilters();
             RefreshCoefficientNames();
@@ -323,8 +321,49 @@ public partial class MainViewModel : ObservableObject
             UpdateDiagnostics();
             RefreshSecondaryViews();
         }
-        catch (Exception ex) { StatusText = "Error: " + ex.Message; }
+        catch (Exception ex) { failures.Add(ex.Message); }
         finally { IsLoading = false; ProgressValue = 100; }
+
+        if (failures.Count > 0)
+            StatusText = $"Error: {failures.Count} of {paths.Length} file(s) failed to load: " + string.Join("; ", failures);
+    }
+
+    private async Task LoadFileAsync(string path, string fileName)
+    {
+        if (RunSummaryParser.IsSummaryFile(path))
+        {
+            if (!RunSummaries.Any(s => string.Equals(s.SourceFile, path, StringComparison.OrdinalIgnoreCase)))
+            {
+                var summary = RunSummaryParser.ParseFile(path);
+                RunSummaries.Add(summary);
+                SelectedRunSummary = summary;
+            }
+            StatusText = "Loaded run summary: " + fileName;
+        }
+        var hash = await FileHashService.ComputeSha256Async(path);
+        var existingId = _cache.FindFileByHash(hash);
+        if (existingId.HasValue)
+        {
+            var info = _cache.GetFileInfo(existingId.Value);
+            if (info != null && !LoadedFiles.Any(f => f.FileId == info.FileId))
+                LoadedFiles.Add(info);
+            StatusText = "Loaded from cache: " + fileName;
+            return;
+        }
+
+        // Progress<T> captures the UI context here, so its callback already runs on the UI thread.
+        var progress = new Progress<ParseProgress>(p =>
+        {
+            ProgressValue = p.Percent;
+            StatusText = "Parsing " + fileName + ": " + p.Percent + "% (" + p.DataPoints + " data points)";
+        });
+        // Parsing and the bulk cache write are CPU/IO heavy; keep them off the UI thread.
+        var result = await Task.Run(() => _parser.ParseAsync(path, progress));
+        StatusText = "Saving " + fileName + " to cache (" + result.TestResults.Count + " data points)...";
+        var fileId = await Task.Run(() => _cache.ImportParseResult(result, hash));
+        result.FileInfo.FileId = fileId;
+        LoadedFiles.Add(result.FileInfo);
+        StatusText = "Parsed: " + fileName + " (" + result.TestResults.Count + " data points)";
     }
 
     partial void OnSelectedModuleChanged(string? value)
@@ -367,6 +406,18 @@ public partial class MainViewModel : ObservableObject
     partial void OnCompareMultiChannelChanged(bool value) { if (value) CompareMultiLoop = false; UpdateChart(); }
     partial void OnCompareMultiLoopChanged(bool value) { if (value) CompareMultiChannel = false; UpdateChart(); }
     partial void OnPerformanceModeChanged(bool value) { UpdateChart(); }
+    partial void OnCurveModeChanged(ChartCurveMode value)
+    {
+        OnPropertyChanged(nameof(CurveModeAuto));
+        OnPropertyChanged(nameof(CurveModeEnvelope));
+        OnPropertyChanged(nameof(CurveModeAllCurves));
+        UpdateChart();
+    }
+
+    // Radio-button bindings; only the checked button writes, so unchecking never changes the mode.
+    public bool CurveModeAuto { get => CurveMode == ChartCurveMode.Auto; set { if (value) CurveMode = ChartCurveMode.Auto; } }
+    public bool CurveModeEnvelope { get => CurveMode == ChartCurveMode.Envelope; set { if (value) CurveMode = ChartCurveMode.Envelope; } }
+    public bool CurveModeAllCurves { get => CurveMode == ChartCurveMode.AllCurves; set { if (value) CurveMode = ChartCurveMode.AllCurves; } }
 
     public void SetWaveOffsetViewMode(bool detail)
     {
@@ -465,8 +516,9 @@ public partial class MainViewModel : ObservableObject
     {
         _focusedSeriesNames.Clear();
         HasSeriesFocus = false;
-        XAxes = new[] { new Axis { Name = "Expected Value", NameTextSize = 13, TextSize = 11 } };
-        YAxes = new[] { new Axis { Name = "Difference", NameTextSize = 13, TextSize = 11 } };
+        // Grid lines sit above the opaque envelope band (ZIndex -5..-2) and below the data series.
+        XAxes = new[] { new Axis { Name = "Expected Value", NameTextSize = 13, TextSize = 11, SeparatorsPaint = CreateGridPaint() } };
+        YAxes = new[] { new Axis { Name = "Difference", NameTextSize = 13, TextSize = 11, SeparatorsPaint = CreateGridPaint() } };
         Series = Array.Empty<ISeries>();
         LegendItems = Array.Empty<LegendItem>();
         CurrentChartData.Clear();
@@ -540,32 +592,218 @@ public partial class MainViewModel : ObservableObject
             })
             .ToList();
 
-        var automaticFast = groups.Count > AutomaticFastSeriesThreshold || data.Count > AutomaticFastPointThreshold;
-        var fast = PerformanceMode || automaticFast;
+        // More curves than distinct palette colors cannot be told apart, so Auto switches to an envelope view.
+        var useEnvelope = CurveMode switch
+        {
+            ChartCurveMode.Envelope => true,
+            ChartCurveMode.AllCurves => false,
+            _ => groups.Count > EnvelopeSeriesThreshold
+        };
+        var fast = PerformanceMode || useEnvelope || groups.Count > AutomaticFastSeriesThreshold ||
+            data.Count > AutomaticFastPointThreshold;
         ChartAnimationsSpeed = fast ? TimeSpan.Zero : TimeSpan.FromMilliseconds(250);
 
         var seriesList = new List<ISeries>();
-        var legendItems = new List<LegendItem>(groups.Count + 2);
-        for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
+        var legendItems = new List<LegendItem>(Math.Min(groups.Count, EnvelopeSeriesThreshold) + 6);
+        int drawnPoints;
+        if (useEnvelope)
         {
-            var group = groups[groupIndex];
-            AddGroupSeries(
-                seriesList,
-                legendItems,
-                group.Title,
-                group.Points,
-                Palette[groupIndex % Palette.Length],
-                drawLimits: groupIndex == 0,
-                fast: fast);
+            drawnPoints = AddEnvelopeSeries(seriesList, legendItems, groups, out var failedCount, out var failedThinned);
+            ChartRenderSummary = $"{groups.Count:N0} curves · {data.Count:N0} points → {drawnPoints:N0} drawn | " +
+                $"Envelope + worst {Math.Min(EnvelopeWorstGroupCount, groups.Count)} | " +
+                (failedThinned ? $"{failedCount:N0} failed points (thinned for display)" : $"all {failedCount:N0} failed points shown");
+        }
+        else
+        {
+            drawnPoints = 0;
+            for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
+            {
+                var group = groups[groupIndex];
+                drawnPoints += AddGroupSeries(
+                    seriesList,
+                    legendItems,
+                    group.Title,
+                    group.Points,
+                    Palette[groupIndex % Palette.Length],
+                    drawLimits: groupIndex == 0,
+                    fast: fast);
+            }
+            ChartRenderSummary = groups.Count > EnvelopeSeriesThreshold
+                ? $"Showing all {groups.Count:N0} curves (envelope off) | {data.Count:N0} points → {drawnPoints:N0} drawn | failed points always shown"
+                : drawnPoints < data.Count
+                ? $"{data.Count:N0} points → {drawnPoints:N0} drawn (per-pixel sampling keeps peaks; zoom in for detail)"
+                : string.Empty;
         }
 
         Series = seriesList.ToArray();
         LegendItems = legendItems;
         RebuildChartLookup();
-        ChartRenderSummary = automaticFast
-            ? $"Showing all {groups.Count:N0} series | Automatic fast rendering"
-            : string.Empty;
         UpdateStatistics(data);
+    }
+
+    private int AddEnvelopeSeries(
+        List<ISeries> seriesList,
+        List<LegendItem> legendItems,
+        IReadOnlyList<ChartGroup> groups,
+        out int failedCount,
+        out bool failedThinned)
+    {
+        var bins = ChartDecimation.Envelope(
+            groups.SelectMany(group => group.Points.Select(point => (point.ExpectValue, point.Difference))),
+            DecimationBuckets);
+        var drawn = 0;
+        if (bins.Count > 0)
+        {
+            // LiveCharts has no "fill between" series: each edge fills down to a shared pivot, drawn from the
+            // top edge down, and each lower edge repaints the color that belongs beneath it. Fills are opaque
+            // so the repaint matches exactly; every other series draws above them (higher ZIndex).
+            var lowLimits = groups[0].Points.Select(point => point.ModuleType == ModuleType.MIXI
+                ? point.LowLimit - point.ExpectValue : point.LowLimit);
+            var pivot = Math.Min(bins.Min(bin => bin.Min), lowLimits.DefaultIfEmpty(0).Min());
+            seriesList.Add(CreateBandEdge(bins.Select(bin => new ObservablePoint(bin.X, bin.Max)), EnvelopeOuterColor, pivot, -5));
+            seriesList.Add(CreateBandEdge(bins.Select(bin => new ObservablePoint(bin.X, bin.P95)), EnvelopeInnerColor, pivot, -4));
+            seriesList.Add(CreateBandEdge(bins.Select(bin => new ObservablePoint(bin.X, bin.P05)), EnvelopeOuterColor, pivot, -3));
+            seriesList.Add(CreateBandEdge(bins.Select(bin => new ObservablePoint(bin.X, bin.Min)), SKColors.White, pivot, -2));
+            seriesList.Add(new LineSeries<ObservablePoint>
+            {
+                Name = "Median",
+                Values = bins.Select(bin => new ObservablePoint(bin.X, bin.Median)).ToArray(),
+                Stroke = new SolidColorPaint(SKColor.Parse("#5F5E5A")) { StrokeThickness = 1.5f },
+                GeometryStroke = null,
+                GeometrySize = 0f,
+                Fill = null,
+                LineSmoothness = 0f
+            });
+            drawn += bins.Count * 5;
+            legendItems.Add(new LegendItem
+            {
+                Name = $"All {groups.Count:N0} curves (min to max)",
+                ColorBrush = new SolidColorBrush(Color.FromRgb(EnvelopeOuterColor.Red, EnvelopeOuterColor.Green, EnvelopeOuterColor.Blue))
+            });
+            legendItems.Add(new LegendItem
+            {
+                Name = "Middle 90% of curves (P5 to P95)",
+                ColorBrush = new SolidColorBrush(Color.FromRgb(EnvelopeInnerColor.Red, EnvelopeInnerColor.Green, EnvelopeInnerColor.Blue))
+            });
+            legendItems.Add(new LegendItem
+            {
+                Name = "Median",
+                ColorBrush = new SolidColorBrush(Color.FromRgb(0x5F, 0x5E, 0x5A))
+            });
+        }
+
+        var worst = groups
+            .Select(group => (Group: group, Score: GroupRiskScore(group.Points),
+                MaxAbs: group.Points.Max(point => Math.Abs(point.Difference))))
+            .OrderByDescending(item => item.Score)
+            .ThenByDescending(item => item.MaxAbs)
+            .Take(EnvelopeWorstGroupCount)
+            .ToArray();
+        for (var index = 0; index < worst.Length; index++)
+        {
+            var (group, score, _) = worst[index];
+            var color = WorstPalette[index % WorstPalette.Length];
+            var values = DecimateGroup(group.Points);
+            var line = new LineSeries<ObservablePoint>
+            {
+                Name = group.Title,
+                Values = values.Select(point => new ObservablePoint(point.X, point.Y)).ToArray(),
+                Stroke = new SolidColorPaint(color) { StrokeThickness = 1.6f },
+                GeometryStroke = null,
+                GeometrySize = 0f,
+                Fill = null,
+                LineSmoothness = 0f
+            };
+            seriesList.Add(line);
+            _seriesFocusKeys[line] = group.Title;
+            drawn += values.Count;
+            legendItems.Add(new LegendItem
+            {
+                Name = score > 0 ? $"{group.Title} · mean utilization {score * 100:0}%" : group.Title,
+                FocusKey = group.Title,
+                ColorBrush = new SolidColorBrush(Color.FromRgb(color.Red, color.Green, color.Blue))
+            });
+        }
+
+        // Every raw point stays hoverable/clickable, so the tooltip names the channel under the band.
+        foreach (var group in groups)
+            AddTooltipPoints(group.Title, group.Points);
+
+        AddLimitSeries(seriesList, legendItems, groups[0].Points);
+
+        var failed = groups.SelectMany(group => group.Points).Where(point => point.IsFailed)
+            .OrderBy(point => point.ExpectValue)
+            .Select(point => (point.ExpectValue, point.Difference))
+            .ToArray();
+        failedCount = failed.Length;
+        var shown = ChartDecimation.ThinScatter(failed, FailedPointDisplayLimit, DecimationBuckets, 500);
+        failedThinned = shown.Count < failed.Length;
+        if (failed.Length > 0)
+        {
+            seriesList.Add(new ScatterSeries<ObservablePoint>
+            {
+                Name = "Failed points",
+                Values = shown.Select(point => new ObservablePoint(point.X, point.Y)).ToArray(),
+                Fill = new SolidColorPaint(SKColor.Parse("#E24B4A")),
+                Stroke = new SolidColorPaint(SKColors.White) { StrokeThickness = 1 },
+                GeometrySize = 8f
+            });
+            drawn += shown.Count;
+            legendItems.Add(new LegendItem { Name = $"Failed points ({failed.Length:N0})", ColorBrush = Brushes.Red });
+        }
+        return drawn;
+    }
+
+    private static SolidColorPaint CreateGridPaint() =>
+        new(new SKColor(0, 0, 0, 22)) { StrokeThickness = 1, ZIndex = -1 };
+
+    private static LineSeries<ObservablePoint> CreateBandEdge(
+        IEnumerable<ObservablePoint> values, SKColor fill, double pivot, int zIndex) =>
+        new()
+        {
+            Name = null,
+            IsVisibleAtLegend = false,
+            IsHoverable = false,
+            Values = values.ToArray(),
+            Stroke = null,
+            Fill = new SolidColorPaint(fill),
+            Pivot = pivot,
+            GeometryStroke = null,
+            GeometryFill = null,
+            GeometrySize = 0f,
+            LineSmoothness = 0f,
+            ZIndex = zIndex
+        };
+
+    // Mean tolerance utilization over the whole curve: highlights curves that drift consistently, while
+    // one-off spikes are already marked by the failed-point layer.
+    private static double GroupRiskScore(IEnumerable<TestResult> points) =>
+        points.Select(CalculateToleranceUtilization)
+            .Where(value => value.HasValue)
+            .Select(value => value!.Value)
+            .DefaultIfEmpty(0)
+            .Average();
+
+    private static IReadOnlyList<(double X, double Y)> DecimateGroup(IReadOnlyList<TestResult> orderedPoints) =>
+        ChartDecimation.MinMax(orderedPoints.Select(point => (point.ExpectValue, point.Difference)).ToArray(), DecimationBuckets);
+
+    private void AddTooltipPoints(string title, IEnumerable<TestResult> points)
+    {
+        foreach (var point in points)
+        {
+            CurrentChartData.Add(new TooltipDataPoint
+            {
+                SeriesName = title,
+                ExpectValue = point.ExpectValue,
+                Difference = point.Difference,
+                MeasureValue = point.MeasureValue,
+                IsFailed = point.IsFailed,
+                WaveValue = point.WaveValue,
+                OffsetValue = point.OffsetValue,
+                DiffValue = point.DiffValue,
+                RowIndex = _chartRowIndices.GetValueOrDefault(point, -1)
+            });
+        }
     }
 
     private void ClearChartDisplay()
@@ -1218,7 +1456,7 @@ public partial class MainViewModel : ObservableObject
         return string.IsNullOrEmpty(normalized) ? "OTHER" : normalized;
     }
 
-    private void AddGroupSeries(
+    private int AddGroupSeries(
         List<ISeries> seriesList,
         List<LegendItem> legendItems,
         string title,
@@ -1227,19 +1465,23 @@ public partial class MainViewModel : ObservableObject
         bool drawLimits,
         bool fast)
     {
-        if (points.Count == 0) return;
+        if (points.Count == 0) return 0;
         var ordered = points.OrderBy(r => r.ExpectValue).ToList();
+        var values = DecimateGroup(ordered);
+        // Markers only help while they stay distinguishable.
+        var markers = !fast && values.Count <= MarkerPointLimit;
 
         var lineSeries = new LineSeries<ObservablePoint>
         {
             Name = title,
-            Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
+            Values = values.Select(p => new ObservablePoint(p.X, p.Y)).ToArray(),
             Stroke = new SolidColorPaint(color) { StrokeThickness = fast ? 1.5f : 2f },
-            GeometryStroke = fast ? null : new SolidColorPaint(color) { StrokeThickness = 2f },
-            GeometrySize = fast ? 0f : 6f,
+            GeometryStroke = markers ? new SolidColorPaint(color) { StrokeThickness = 2f } : null,
+            GeometrySize = markers ? 6f : 0f,
             Fill = null,
             LineSmoothness = 0f
         };
+        var drawn = values.Count;
         seriesList.Add(lineSeries);
         _seriesFocusKeys[lineSeries] = title;
         legendItems.Add(new LegendItem
@@ -1249,35 +1491,22 @@ public partial class MainViewModel : ObservableObject
             ColorBrush = new SolidColorBrush(Color.FromRgb(color.Red, color.Green, color.Blue))
         });
 
-        foreach (var point in ordered)
-        {
-            CurrentChartData.Add(new TooltipDataPoint
-            {
-                SeriesName = title,
-                ExpectValue = point.ExpectValue,
-                Difference = point.Difference,
-                MeasureValue = point.MeasureValue,
-                IsFailed = point.IsFailed,
-                WaveValue = point.WaveValue,
-                OffsetValue = point.OffsetValue,
-                DiffValue = point.DiffValue,
-                RowIndex = _chartRowIndices.GetValueOrDefault(point, -1)
-            });
-        }
+        AddTooltipPoints(title, ordered);
 
-        if (drawLimits) AddLimitSeries(seriesList, legendItems, ordered);
+        if (drawLimits) drawn += AddLimitSeries(seriesList, legendItems, ordered);
 
-        if (fast) return;
-
-        var failedPoints = ordered.Where(p => p.IsFailed).ToList();
-        if (failedPoints.Count == 0) return;
+        // Failed points are the main reason to look at the chart, so fast rendering never hides them.
+        var failedPoints = ordered.Where(p => p.IsFailed).Select(p => (p.ExpectValue, p.Difference)).ToArray();
+        if (failedPoints.Length == 0) return drawn;
+        var shownFailures = ChartDecimation.ThinScatter(failedPoints, FailedPointDisplayLimit, DecimationBuckets, 500);
+        drawn += shownFailures.Count;
 
         var failSeries = new ScatterSeries<ObservablePoint>
         {
             Name = title + " (Failed)",
-            Values = failedPoints.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
+            Values = shownFailures.Select(p => new ObservablePoint(p.X, p.Y)).ToArray(),
             Fill = new SolidColorPaint(SKColors.Red),
-            GeometrySize = 12f
+            GeometrySize = fast ? 9f : 12f
         };
         seriesList.Add(failSeries);
         _seriesFocusKeys[failSeries] = title;
@@ -1287,23 +1516,26 @@ public partial class MainViewModel : ObservableObject
             FocusKey = title,
             ColorBrush = Brushes.Red
         });
+        return drawn;
     }
 
-    private void AddLimitSeries(
+    private int AddLimitSeries(
         List<ISeries> seriesList,
         List<LegendItem> legendItems,
         IReadOnlyList<TestResult> points)
     {
-        if (points.Count == 0) return;
+        if (points.Count == 0) return 0;
         var ordered = points.OrderBy(point => point.ExpectValue).ToArray();
         var isMixi = ordered[0].ModuleType == ModuleType.MIXI;
+        var high = ChartDecimation.MinMax(ordered.Select(point =>
+            (point.ExpectValue, isMixi ? point.UpLimit - point.ExpectValue : point.UpLimit)).ToArray(), DecimationBuckets);
+        var low = ChartDecimation.MinMax(ordered.Select(point =>
+            (point.ExpectValue, isMixi ? point.LowLimit - point.ExpectValue : point.LowLimit)).ToArray(), DecimationBuckets);
 
         var highLimit = new LineSeries<ObservablePoint>
         {
             Name = "High Limit",
-            Values = ordered.Select(point => new ObservablePoint(
-                point.ExpectValue,
-                isMixi ? point.UpLimit - point.ExpectValue : point.UpLimit)).ToArray(),
+            Values = high.Select(point => new ObservablePoint(point.X, point.Y)).ToArray(),
             Stroke = new SolidColorPaint(new SKColor(220, 50, 50, 160)) { StrokeThickness = 1.5f },
             GeometryStroke = null,
             GeometrySize = 0f,
@@ -1320,9 +1552,7 @@ public partial class MainViewModel : ObservableObject
         var lowLimit = new LineSeries<ObservablePoint>
         {
             Name = "Low Limit",
-            Values = ordered.Select(point => new ObservablePoint(
-                point.ExpectValue,
-                isMixi ? point.LowLimit - point.ExpectValue : point.LowLimit)).ToArray(),
+            Values = low.Select(point => new ObservablePoint(point.X, point.Y)).ToArray(),
             Stroke = new SolidColorPaint(new SKColor(50, 100, 220, 160)) { StrokeThickness = 1.5f },
             GeometryStroke = null,
             GeometrySize = 0f,
@@ -1353,6 +1583,7 @@ public partial class MainViewModel : ObservableObject
                 IsLimit = true
             });
         }
+        return high.Count + low.Count;
     }
 
     private void RebuildChartLookup()
@@ -1489,7 +1720,7 @@ public partial class MainViewModel : ObservableObject
         Statistics = entries;
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanChangeFiles))]
     private void ClearAll()
     {
         RunSummaries.Clear(); RunFailedSlots.Clear(); SelectedRunSummary = null;
@@ -1507,6 +1738,13 @@ public partial class MainViewModel : ObservableObject
         ClearDiagnostics();
         StatusText = "Ready";
     }
+}
+
+public enum ChartCurveMode
+{
+    Auto,
+    Envelope,
+    AllCurves
 }
 
 public class StatEntry

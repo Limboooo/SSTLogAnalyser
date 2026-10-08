@@ -8,6 +8,7 @@ public class CacheService : IDisposable
 {
     private const int CurrentParserVersion = 8;
     private readonly string _dbPath;
+    private readonly string _connectionString;
     private SqliteConnection _connection;
 
     public CacheService(string? dbDirectory = null)
@@ -17,7 +18,8 @@ public class CacheService : IDisposable
             "SSTLogAnalyser");
         Directory.CreateDirectory(dbDirectory);
         _dbPath = Path.Combine(dbDirectory, "cache.db");
-        _connection = new SqliteConnection("Data Source=" + _dbPath);
+        _connectionString = "Data Source=" + _dbPath;
+        _connection = new SqliteConnection(_connectionString);
         _connection.Open();
         InitializeSchema();
 
@@ -210,9 +212,33 @@ public class CacheService : IDisposable
         return MapLogFile(reader);
     }
 
-    public long InsertLogFile(LogFileInfo info, string hash)
+    public long InsertLogFile(LogFileInfo info, string hash) => InsertLogFile(_connection, null, info, hash);
+
+    /// <summary>
+    /// Writes a complete parse result in one transaction on a dedicated connection, so the import can
+    /// run off the UI thread while the shared connection keeps serving queries. A failure leaves no rows.
+    /// </summary>
+    public long ImportParseResult(ParseResult result, string hash)
     {
-        using var cmd = _connection.CreateCommand();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+        var fileId = InsertLogFile(connection, transaction, result.FileInfo, hash);
+        InsertTestResults(connection, transaction, fileId, result.TestResults);
+        InsertCalibrationCoefficients(connection, transaction, fileId, result.CalibrationCoefficients);
+        InsertDevices(connection, transaction, fileId, result.Devices);
+        InsertErrors(connection, transaction, fileId, result.Errors);
+        InsertDiagnosticObservations(connection, transaction, fileId, result.DiagnosticObservations);
+        InsertSystemInfos(connection, transaction, fileId, result.SystemInfos);
+        MarkFileComplete(connection, transaction, fileId);
+        transaction.Commit();
+        return fileId;
+    }
+
+    private static long InsertLogFile(SqliteConnection connection, SqliteTransaction? transaction, LogFileInfo info, string hash)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
         cmd.CommandText = @"INSERT INTO log_files (file_path, file_name, file_hash, file_size, parse_time, loop_count, tool_version, parser_version)
             VALUES (@path, @name, @hash, @size, @time, @loops, @ver, @parserVersion);
             SELECT last_insert_rowid();";
@@ -230,7 +256,13 @@ public class CacheService : IDisposable
     public void InsertTestResults(long fileId, IEnumerable<TestResult> results)
     {
         using var transaction = _connection.BeginTransaction();
-        using var cmd = _connection.CreateCommand();
+        InsertTestResults(_connection, transaction, fileId, results);
+        transaction.Commit();
+    }
+
+    private static void InsertTestResults(SqliteConnection connection, SqliteTransaction transaction, long fileId, IEnumerable<TestResult> results)
+    {
+        using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = @"INSERT INTO test_results (file_id, loop_index, module_type, slot_number, channel_id,
                 test_item_name, expect_value, measure_value, low_limit, up_limit,
@@ -286,13 +318,18 @@ public class CacheService : IDisposable
             pExplicit.Value = r.HasExplicitResult ? 1 : 0;
             cmd.ExecuteNonQuery();
         }
-        transaction.Commit();
     }
 
     public void InsertCalibrationCoefficients(long fileId, IEnumerable<CalibrationCoefficient> coefficients)
     {
         using var transaction = _connection.BeginTransaction();
-        using var cmd = _connection.CreateCommand();
+        InsertCalibrationCoefficients(_connection, transaction, fileId, coefficients);
+        transaction.Commit();
+    }
+
+    private static void InsertCalibrationCoefficients(SqliteConnection connection, SqliteTransaction transaction, long fileId, IEnumerable<CalibrationCoefficient> coefficients)
+    {
+        using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = @"INSERT INTO calibration_coefficients
             (file_id, loop_index, module_type, channel_id, calibration_item, coefficient_name, gain, offset, line_number)
@@ -321,14 +358,18 @@ public class CacheService : IDisposable
             pLine.Value = coefficient.LineNumber;
             cmd.ExecuteNonQuery();
         }
-
-        transaction.Commit();
     }
 
     public void InsertDevices(long fileId, IEnumerable<DeviceInfo> devices)
     {
         using var transaction = _connection.BeginTransaction();
-        using var cmd = _connection.CreateCommand();
+        InsertDevices(_connection, transaction, fileId, devices);
+        transaction.Commit();
+    }
+
+    private static void InsertDevices(SqliteConnection connection, SqliteTransaction transaction, long fileId, IEnumerable<DeviceInfo> devices)
+    {
+        using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = "INSERT INTO device_info (file_id, group_number, location_id, slot_info, device_name) VALUES (@fid, @grp, @loc, @slot, @name)";
         foreach (var d in devices)
@@ -341,13 +382,18 @@ public class CacheService : IDisposable
             cmd.Parameters.AddWithValue("@name", d.DeviceName);
             cmd.ExecuteNonQuery();
         }
-        transaction.Commit();
     }
 
     public void InsertErrors(long fileId, IEnumerable<ErrorLogEntry> errors)
     {
         using var transaction = _connection.BeginTransaction();
-        using var cmd = _connection.CreateCommand();
+        InsertErrors(_connection, transaction, fileId, errors);
+        transaction.Commit();
+    }
+
+    private static void InsertErrors(SqliteConnection connection, SqliteTransaction transaction, long fileId, IEnumerable<ErrorLogEntry> errors)
+    {
+        using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = "INSERT INTO error_log (file_id, loop_index, timestamp, level, message, line_number) VALUES (@fid, @loop, @ts, @level, @msg, @line)";
         foreach (var e in errors)
@@ -361,13 +407,18 @@ public class CacheService : IDisposable
             cmd.Parameters.AddWithValue("@line", e.LineNumber);
             cmd.ExecuteNonQuery();
         }
-        transaction.Commit();
     }
 
     public void InsertDiagnosticObservations(long fileId, IEnumerable<DiagnosticObservation> observations)
     {
         using var transaction = _connection.BeginTransaction();
-        using var cmd = _connection.CreateCommand();
+        InsertDiagnosticObservations(_connection, transaction, fileId, observations);
+        transaction.Commit();
+    }
+
+    private static void InsertDiagnosticObservations(SqliteConnection connection, SqliteTransaction transaction, long fileId, IEnumerable<DiagnosticObservation> observations)
+    {
+        using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = @"INSERT INTO diagnostic_observations
             (file_id, loop_index, timestamp, line_number, kind, module, slot, channel, item, value, unit,
@@ -396,13 +447,18 @@ public class CacheService : IDisposable
             cmd.Parameters.AddWithValue("@raw", o.RawMessage);
             cmd.ExecuteNonQuery();
         }
-        transaction.Commit();
     }
 
     public void InsertSystemInfos(long fileId, IEnumerable<SystemInfo> infos)
     {
         using var transaction = _connection.BeginTransaction();
-        using var cmd = _connection.CreateCommand();
+        InsertSystemInfos(_connection, transaction, fileId, infos);
+        transaction.Commit();
+    }
+
+    private static void InsertSystemInfos(SqliteConnection connection, SqliteTransaction transaction, long fileId, IEnumerable<SystemInfo> infos)
+    {
+        using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = "INSERT INTO system_info (file_id, key, value) VALUES (@fid, @key, @val)";
         foreach (var s in infos)
@@ -413,7 +469,6 @@ public class CacheService : IDisposable
             cmd.Parameters.AddWithValue("@val", s.Value);
             cmd.ExecuteNonQuery();
         }
-        transaction.Commit();
     }
 
     public List<string> GetDistinctModules(long[] fileIds)
@@ -797,9 +852,12 @@ public class CacheService : IDisposable
         };
     }
 
-    public void MarkFileComplete(long fileId)
+    public void MarkFileComplete(long fileId) => MarkFileComplete(_connection, null, fileId);
+
+    private static void MarkFileComplete(SqliteConnection connection, SqliteTransaction? transaction, long fileId)
     {
-        using var cmd = _connection.CreateCommand();
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
         cmd.CommandText = "UPDATE log_files SET import_complete=1 WHERE file_id=@fid";
         cmd.Parameters.AddWithValue("@fid", fileId);
         cmd.ExecuteNonQuery();

@@ -29,6 +29,10 @@ public class LogParser
     private static readonly Regex SoftwareNameRegex = new(@"SoftwareName:\s*(.+?)\s+FileVersion:\s*(.+)", RegexOptions.Compiled);
     private static readonly Regex MixiHeaderRegex = new(@"^(AWG|DTZ)\s+CH\s+(\d+)\s+(.+)$", RegexOptions.Compiled);
     private static readonly Regex MixiDataRegex = new(@"--(?<component>.+?)--\s+Target:[\d.\-Ee+]+.*?Meas:(?<measure>[\d.\-Ee+]+)\s+LowLimit:(?<low>[\d.\-Ee+]+)\s+HighLimit:(?<high>[\d.\-Ee+]+)\s+Meas-Target:(?<difference>[\d.\-Ee+]+)", RegexOptions.Compiled);
+    private static readonly Regex MixiTargetRegex = new(@"Target:([\d.\-Ee+]+)", RegexOptions.Compiled);
+    private static readonly Regex MixiWaveRegex = new(@"WAVE:([\d.\-Ee+]+)", RegexOptions.Compiled);
+    private static readonly Regex MixiOffsetRegex = new(@"OFFSET:([\d.\-Ee+]+)", RegexOptions.Compiled);
+    private static readonly Regex PpmuModeRegex = new(@"\(([^)]+)\)", RegexOptions.Compiled);
     private static readonly Regex TmuSpecRegex = new(@"^Expect error between\s+([\d.\-Ee+]+)ns\s*~\s*([\d.\-Ee+]+)ns", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex TmuReferenceRegex = new(@"^Ref TestTime ActualValue\s*=\s*([\d.\-Ee+]+)ns", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -76,7 +80,7 @@ public class LogParser
             if (lineNumber % 10000 == 0)
             {
                 var pct = Math.Min(100, (int)(lineNumber * 100.0 / estimatedLines));
-                progress?.Report(new ParseProgress(pct, lineNumber, 0));
+                progress?.Report(new ParseProgress(pct, lineNumber, result.TestResults.Count));
             }
 
             var tsMatch = TimestampRegex.Match(line);
@@ -349,7 +353,7 @@ public class LogParser
                 if (mixiDataMatch.Success)
                 {
                     // Extract Target value separately (may have extra content like [WAVE:... OFFSET:...])
-                    var targetMatch = System.Text.RegularExpressions.Regex.Match(message, @"Target:([\d.\-Ee+]+)");
+                    var targetMatch = MixiTargetRegex.Match(message);
                     double target = targetMatch.Success ? ParseDouble(targetMatch.Groups[1].Value) : 0;
                     double meas = ParseDouble(mixiDataMatch.Groups["measure"].Value);
                     double lowLimit = ParseDouble(mixiDataMatch.Groups["low"].Value);
@@ -360,8 +364,8 @@ public class LogParser
 
                     // Extract WAVE and OFFSET if present
                     double? waveValue = null, offsetValue = null;
-                    var waveMatch = System.Text.RegularExpressions.Regex.Match(message, @"WAVE:([\d.\-Ee+]+)");
-                    var offsetMatch = System.Text.RegularExpressions.Regex.Match(message, @"OFFSET:([\d.\-Ee+]+)");
+                    var waveMatch = MixiWaveRegex.Match(message);
+                    var offsetMatch = MixiOffsetRegex.Match(message);
                     if (waveMatch.Success) waveValue = ParseDouble(waveMatch.Groups[1].Value);
                     if (offsetMatch.Success) offsetValue = ParseDouble(offsetMatch.Groups[1].Value);
 
@@ -506,7 +510,7 @@ public class LogParser
 
     private static string FormatPpmuTestItem(string section, string? pinColumn)
     {
-        var modeMatch = Regex.Match(pinColumn ?? string.Empty, @"\(([^)]+)\)");
+        var modeMatch = PpmuModeRegex.Match(pinColumn ?? string.Empty);
         if (!modeMatch.Success) return section;
 
         var mode = modeMatch.Groups[1].Value.Trim().ToUpperInvariant();

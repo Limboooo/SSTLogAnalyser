@@ -233,9 +233,21 @@
                         </StackPanel>
                     </GroupBox>
                     <GroupBox Header="Rendering">
-                        <CheckBox Content="Performance Mode (fast, no points)"
-                                  IsChecked="{Binding PerformanceMode}" Margin="0,2"
-                                  ToolTip="Reduce point markers for large selections"/>
+                        <StackPanel>
+                            <TextBlock Text="Many curves" Foreground="#666" FontSize="11" Margin="0,0,0,2"/>
+                            <RadioButton Content="Auto (envelope above 12 curves)" GroupName="CurveMode"
+                                         IsChecked="{Binding CurveModeAuto}" Margin="0,2"
+                                         ToolTip="Up to 12 curves: one line each. More: min-max / P5-P95 band, median and the worst 8 curves."/>
+                            <RadioButton Content="Envelope + worst 8" GroupName="CurveMode"
+                                         IsChecked="{Binding CurveModeEnvelope}" Margin="0,2"
+                                         ToolTip="Always draw the envelope band, median and the worst 8 curves."/>
+                            <RadioButton Content="All curves (one line each)" GroupName="CurveMode"
+                                         IsChecked="{Binding CurveModeAllCurves}" Margin="0,2"
+                                         ToolTip="Draw every selected curve. With hundreds of curves the chart can become slow and colors repeat."/>
+                            <CheckBox Content="Performance Mode (fast, no points)"
+                                      IsChecked="{Binding PerformanceMode}" Margin="0,6,0,2"
+                                      ToolTip="Hide point markers and animations; failed points stay visible"/>
+                        </StackPanel>
                     </GroupBox>
                 </StackPanel>
             </ScrollViewer>

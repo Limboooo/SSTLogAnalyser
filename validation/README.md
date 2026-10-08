@@ -60,6 +60,8 @@ NEG 使用 `signedWAVE = -WAVE`。下面是**生成时注入的真实参数**，
 powershell -NoProfile -File .\validation\Run-Regression.ps1
 ```
 
+若提示“在此系统上禁止运行脚本”，改用 `powershell -NoProfile -ExecutionPolicy Bypass -File .\validation\Run-Regression.ps1`，或直接运行 `dotnet run --project validation/Regression.csproj -c Release -p:NoWarn=NU1701`。项目放在很深的目录（总路径接近 260 字符）时 WPF 生成会因找不到 `obj\*.nuget.g.targets` 失败，请把仓库放到较短路径再构建。
+
 正常结束输出 `PASS: ... assertions`；任何预期不符都会抛错并返回失败。需要 Windows、.NET 9 SDK 和应用现有依赖，不增加测试框架。回归项目引用并构建实际应用，验证解析器、缓存和导入 ViewModel；脚本只隐藏已知 NU1701 兼容警告。
 
 验证范围：解析点数和失败数、NA/Unknown/显式判定、ADC、源行号、时间戳、Loop/Re-test、Summary 总体及阶段状态、失败 Slot、已知 MIXI 拟合参数、缓存读写、模块/通道筛选、缓存后的归因、旧解析版本失效。缓存存入独立临时目录并在结束时清理，不使用工具的用户缓存。
@@ -93,7 +95,7 @@ powershell -NoProfile -File .\validation\Run-Regression.ps1 -Generate
 
 数值、通道和组合是用于软件验证的测试设计；不是完整硬件配置或所有 Trunk 输出格式的覆盖。自动回归不启动 WPF 界面，图表视觉、点击操作及 PNG 导出仍需按上面的界面步骤检查。将来有实机 LOG 时应补充真实样本验证。
 
-按用户要求已移除 All Log Lines、通用字段提取及原文缓存。当前回归为 998 项断言，包含 20 项实际导入/图表/基准对比页面数据链检查及 22 项匹配规则检查。上文 925 项为历史结果。
+按用户要求已移除 All Log Lines、通用字段提取及原文缓存。当前回归为 1023 项断言，包含 37 项实际导入/图表/基准对比页面数据链检查及 22 项匹配规则检查；新增项覆盖单事务导入及失败回滚、批量导入中单个文件失败不影响其余文件、导入期间拒绝重复拖放并禁用 Load/Clear，以及主图抽样/包络算法、超过 12 条曲线自动切换包络、Auto / Envelope / All curves 手动切换、快速模式下失败点仍显示。上文 925、998、1006 项为历史结果。
 
 `ComparisonCheck.cs` 验证新增/恢复/持续失败、80% 临界点、缺失/新增点、重复和浮点歧义、限值放宽、负误差改善、无效限值、MIXI 同 Target 不同组成、Slot/Component/测试项隔离，以及 10 万点匹配。`UiImportCheck.cs` 验证独立文件/Loop、默认最后 Loop、筛选与搜索、双误差/四限值曲线和更换选择后旧结果清空。窗口像素和 PNG 导出不在这些自动检查范围内。
 
