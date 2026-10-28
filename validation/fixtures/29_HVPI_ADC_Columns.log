@@ -1,0 +1,7 @@
+2026-09-30 10:00:00,000 INFO - Index 1 of 1
+2026-09-30 10:00:00,000 INFO - HVPI Channel 800: V, -40, 40, Force Voltage Verification
+2026-09-30 10:00:00,000 INFO - ,Expect,DmmMeasure,ADCMeasure,LowLimit,UpLimit,Difference,ADCDifference
+2026-09-30 10:00:00,000 INFO - ,1,1.0002,1.0003,-0.001,0.001,0.0002,0.0001
+2026-09-30 10:00:00,000 INFO - HVPI Channel 800: V, -40, 40, Measure Voltage Verification
+2026-09-30 10:00:00,000 INFO - ,Expect,DmmMeasure,AdcMeasure,LowLimit,UpLimit,Difference,
+2026-09-30 10:00:00,000 INFO - ,1,1.0002,1.0003,-0.001,0.001,-0.0001,

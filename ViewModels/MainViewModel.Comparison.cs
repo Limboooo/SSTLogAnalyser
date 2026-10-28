@@ -126,6 +126,12 @@ public partial class MainViewModel
             "Curves include unmatched and repeated points; repeated X values may overlap. Positive delta |error| means worse.";
         void Add(TestResult[] points, string name, SKColor color)
         {
+            var runs = points.GroupBy(p => p.TestSequence).ToArray();
+            foreach (var run in runs)
+                AddRun(run.ToArray(), name + (runs.Length > 1 ? " / Run " + run.Key : ""), color);
+        }
+        void AddRun(TestResult[] points, string name, SKColor color)
+        {
             if (points.Length == 0) return;
             series.Add(Line(name, points.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)), color, 5));
             series.Add(Line(name + " High", points.Select(p => new ObservablePoint(p.ExpectValue, BaselineLogComparer.ErrorLimits(p).High)), color.WithAlpha(130), 3));

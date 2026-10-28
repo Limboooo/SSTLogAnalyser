@@ -6,7 +6,8 @@ namespace SSTLogAnalyser.Services;
 
 public class CacheService : IDisposable
 {
-    private const int CurrentParserVersion = 8;
+    private const int CurrentParserVersion = 14;
+    public int? SelectedBatch { get; set; }
     private readonly string _dbPath;
     private SqliteConnection _connection;
 
@@ -34,6 +35,10 @@ public class CacheService : IDisposable
     {
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = @"
+            CREATE TABLE IF NOT EXISTS run_batches (
+                file_id INTEGER NOT NULL, batch_index INTEGER NOT NULL,
+                start_line INTEGER NOT NULL, end_line INTEGER NOT NULL,
+                PRIMARY KEY(file_id, batch_index));
             CREATE TABLE IF NOT EXISTS log_files (
                 file_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_path TEXT NOT NULL,
@@ -150,6 +155,8 @@ public class CacheService : IDisposable
         try { alterCmd.ExecuteNonQuery(); } catch { /* column already exists */ }
         alterCmd.CommandText = "ALTER TABLE test_results ADD COLUMN has_explicit_result INTEGER DEFAULT 0";
         try { alterCmd.ExecuteNonQuery(); } catch { /* column already exists */ }
+        alterCmd.CommandText = "ALTER TABLE test_results ADD COLUMN test_sequence INTEGER NOT NULL DEFAULT 1";
+        try { alterCmd.ExecuteNonQuery(); } catch { /* column already exists */ }
         alterCmd.CommandText = "ALTER TABLE log_files ADD COLUMN parser_version INTEGER DEFAULT 1";
         try { alterCmd.ExecuteNonQuery(); } catch { /* column already exists */ }
 
@@ -189,7 +196,7 @@ public class CacheService : IDisposable
     private void DeleteCachedFile(long fileId)
     {
         using var transaction = _connection.BeginTransaction();
-        foreach (var table in new[] { "test_results", "device_info", "error_log", "system_info", "calibration_coefficients", "diagnostic_observations", "log_files" })
+        foreach (var table in new[] { "run_batches", "test_results", "device_info", "error_log", "system_info", "calibration_coefficients", "diagnostic_observations", "log_files" })
         {
             using var cmd = _connection.CreateCommand();
             cmd.Transaction = transaction;
@@ -235,9 +242,9 @@ public class CacheService : IDisposable
         cmd.CommandText = @"INSERT INTO test_results (file_id, loop_index, module_type, slot_number, channel_id,
                 test_item_name, expect_value, measure_value, low_limit, up_limit,
                 difference_value, is_failed, is_retest, line_number, wave_value, offset_value, diff_value, component_type,
-                timestamp, adc_measure_value, has_explicit_result)
+                timestamp, adc_measure_value, has_explicit_result, test_sequence)
             VALUES (@fid, @loop, @mod, @slot, @ch, @test, @exp, @meas, @low, @up, @diff, @fail, @retest, @line, @wave, @offset, @diffval, @component,
-                @timestamp, @adc, @explicit)";
+                @timestamp, @adc, @explicit, @sequence)";
 
         var pFid = cmd.CreateParameter(); pFid.ParameterName = "@fid"; cmd.Parameters.Add(pFid);
         var pLoop = cmd.CreateParameter(); pLoop.ParameterName = "@loop"; cmd.Parameters.Add(pLoop);
@@ -261,6 +268,7 @@ public class CacheService : IDisposable
         var pAdc = cmd.CreateParameter(); pAdc.ParameterName = "@adc"; cmd.Parameters.Add(pAdc);
         var pExplicit = cmd.CreateParameter(); pExplicit.ParameterName = "@explicit"; cmd.Parameters.Add(pExplicit);
 
+        var pSequence = cmd.Parameters.Add("@sequence", SqliteType.Integer);
         foreach (var r in results)
         {
             pFid.Value = fileId;
@@ -269,6 +277,7 @@ public class CacheService : IDisposable
             pSlot.Value = r.SlotNumber;
             pCh.Value = r.ChannelId;
             pTest.Value = r.TestItemName;
+            pSequence.Value = r.TestSequence;
             pExp.Value = r.ExpectValue;
             pMeas.Value = r.MeasureValue;
             pLow.Value = r.LowLimit;
@@ -420,7 +429,7 @@ public class CacheService : IDisposable
     {
         using var cmd = _connection.CreateCommand();
         var where = BuildFileIdWhere(fileIds);
-        cmd.CommandText = "SELECT DISTINCT module_type FROM (SELECT file_id, module_type FROM test_results UNION SELECT file_id, module_type FROM calibration_coefficients) WHERE " + where + " ORDER BY module_type";
+        cmd.CommandText = "SELECT DISTINCT module_type FROM (SELECT file_id, module_type, line_number FROM test_results UNION SELECT file_id, module_type, line_number FROM calibration_coefficients) WHERE " + where + " ORDER BY module_type";
         AddFileIdParams(cmd, fileIds);
         var list = new List<string>();
         using var reader = cmd.ExecuteReader();
@@ -433,7 +442,7 @@ public class CacheService : IDisposable
         using var cmd = _connection.CreateCommand();
         var where = BuildFileIdWhere(fileIds);
         if (moduleType != null) where += " AND module_type = @mod";
-        cmd.CommandText = "SELECT DISTINCT channel_id FROM (SELECT file_id, module_type, channel_id FROM test_results UNION SELECT file_id, module_type, channel_id FROM calibration_coefficients) WHERE " + where + " ORDER BY channel_id";
+        cmd.CommandText = "SELECT DISTINCT channel_id FROM (SELECT file_id, module_type, channel_id, line_number FROM test_results UNION SELECT file_id, module_type, channel_id, line_number FROM calibration_coefficients) WHERE " + where + " ORDER BY channel_id";
         if (moduleType != null) cmd.Parameters.AddWithValue("@mod", moduleType);
         AddFileIdParams(cmd, fileIds);
         var list = new List<int>();
@@ -470,7 +479,7 @@ public class CacheService : IDisposable
         if (moduleType != null) where += " AND module_type = @mod";
         if (testItem != null) where += " AND test_item_name = @test";
         if (channelId.HasValue) where += " AND channel_id = @ch";
-        cmd.CommandText = "SELECT DISTINCT loop_index FROM (SELECT file_id, module_type, test_item_name, loop_index, channel_id FROM test_results UNION SELECT file_id, module_type, calibration_item AS test_item_name, loop_index, channel_id FROM calibration_coefficients) WHERE " + where + " ORDER BY loop_index";
+        cmd.CommandText = "SELECT DISTINCT loop_index FROM (SELECT file_id, module_type, test_item_name, loop_index, channel_id, line_number FROM test_results UNION SELECT file_id, module_type, calibration_item AS test_item_name, loop_index, channel_id, line_number FROM calibration_coefficients) WHERE " + where + " ORDER BY loop_index";
         if (moduleType != null) cmd.Parameters.AddWithValue("@mod", moduleType);
         if (testItem != null) cmd.Parameters.AddWithValue("@test", testItem);
         if (channelId.HasValue) cmd.Parameters.AddWithValue("@ch", channelId.Value);
@@ -564,7 +573,7 @@ public class CacheService : IDisposable
             for (var i = 0; i < loops.Length; i++)
                 cmd.Parameters.AddWithValue("@queryLoop" + i, loops[i]);
         }
-        cmd.CommandText = "SELECT file_id, loop_index, module_type, slot_number, channel_id, test_item_name, expect_value, measure_value, low_limit, up_limit, difference_value, is_failed, is_retest, line_number, wave_value, offset_value, diff_value, component_type, timestamp, adc_measure_value, has_explicit_result FROM test_results WHERE " + where + " ORDER BY loop_index, channel_id, expect_value";
+        cmd.CommandText = "SELECT file_id, loop_index, module_type, slot_number, channel_id, test_item_name, expect_value, measure_value, low_limit, up_limit, difference_value, is_failed, is_retest, line_number, wave_value, offset_value, diff_value, component_type, timestamp, adc_measure_value, has_explicit_result, test_sequence FROM test_results WHERE " + where + " ORDER BY loop_index, channel_id, expect_value";
         if (moduleType != null) cmd.Parameters.AddWithValue("@mod", moduleType);
         if (testItem != null) cmd.Parameters.AddWithValue("@test", testItem);
         AddFileIdParams(cmd, fileIds);
@@ -685,7 +694,7 @@ public class CacheService : IDisposable
     public List<DeviceInfo> GetDevices(long[] fileIds)
     {
         using var cmd = _connection.CreateCommand();
-        var where = BuildFileIdWhere(fileIds);
+        var where = BuildFileIdWhere(fileIds, false);
         cmd.CommandText = "SELECT file_id, group_number, location_id, slot_info, device_name FROM device_info WHERE " + where + " ORDER BY group_number, location_id";
         AddFileIdParams(cmd, fileIds);
         var list = new List<DeviceInfo>();
@@ -707,7 +716,7 @@ public class CacheService : IDisposable
     public List<SystemInfo> GetSystemInfos(long[] fileIds)
     {
         using var cmd = _connection.CreateCommand();
-        var where = BuildFileIdWhere(fileIds);
+        var where = BuildFileIdWhere(fileIds, false);
         cmd.CommandText = "SELECT key, value FROM system_info WHERE " + where;
         AddFileIdParams(cmd, fileIds);
         var list = new List<SystemInfo>();
@@ -741,8 +750,43 @@ public class CacheService : IDisposable
         return list;
     }
 
-    private string BuildFileIdWhere(long[] fileIds)
+    public void InsertRunBatches(long fileId, IEnumerable<RunBatch> batches)
     {
+        using var transaction = _connection.BeginTransaction();
+        using var cmd = _connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = "INSERT INTO run_batches VALUES (@fid, @batch, @start, @end)";
+        foreach (var batch in batches)
+        {
+            cmd.Parameters.Clear();
+            cmd.Parameters.AddWithValue("@fid", fileId);
+            cmd.Parameters.AddWithValue("@batch", batch.Index);
+            cmd.Parameters.AddWithValue("@start", batch.StartLine);
+            cmd.Parameters.AddWithValue("@end", batch.EndLine);
+            cmd.ExecuteNonQuery();
+        }
+        transaction.Commit();
+    }
+
+    public List<int> GetRunBatches(long[] fileIds)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT DISTINCT batch_index FROM run_batches WHERE " + BuildFileIdWhere(fileIds, false) + " ORDER BY batch_index";
+        AddFileIdParams(cmd, fileIds);
+        var batches = new List<int>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read()) batches.Add(reader.GetInt32(0));
+        return batches;
+    }
+
+    private string BuildFileIdWhere(long[] fileIds, bool filterBatch = true)
+    {
+        if (fileIds.Length == 0) return "0=1";
+        if (filterBatch && SelectedBatch.HasValue)
+            return "(" + string.Join(" OR ", fileIds.Select((_, i) =>
+                $"(file_id = @fid{i} AND line_number BETWEEN " +
+                $"COALESCE((SELECT start_line FROM run_batches WHERE file_id = @fid{i} AND batch_index = {SelectedBatch.Value}), 2147483647) AND " +
+                $"COALESCE((SELECT end_line FROM run_batches WHERE file_id = @fid{i} AND batch_index = {SelectedBatch.Value}), -1))")) + ")";
         if (fileIds.Length == 1) return "file_id = @fid0";
         var ids = string.Join(",", fileIds.Select((_, i) => "@fid" + i));
         return "file_id IN (" + ids + ")";
@@ -793,7 +837,8 @@ public class CacheService : IDisposable
             ComponentType = reader.IsDBNull(17) ? string.Empty : reader.GetString(17),
             Timestamp = reader.IsDBNull(18) ? string.Empty : reader.GetString(18),
             AdcMeasureValue = reader.IsDBNull(19) ? null : reader.GetDouble(19),
-            HasExplicitResult = reader.GetInt32(20) == 1
+            HasExplicitResult = reader.GetInt32(20) == 1,
+            TestSequence = reader.GetInt32(21)
         };
     }
 

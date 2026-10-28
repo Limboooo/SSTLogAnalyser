@@ -209,6 +209,10 @@
                     <GroupBox Header="Test Item">
                         <ListBox ItemsSource="{Binding AvailableTestItems}" SelectedItem="{Binding SelectedTestItem}" MaxHeight="180"/>
                     </GroupBox>
+                    <GroupBox Header="Run Batch / 运行批次">
+                        <ComboBox ItemsSource="{Binding AvailableBatches}" SelectedItem="{Binding SelectedBatch}"
+                                  ToolTip="Batch numbers follow execution order within each file; Loop numbers remain unchanged."/>
+                    </GroupBox>
                     <GroupBox Header="Loops">
                         <Grid>
                             <Grid.RowDefinitions>
@@ -254,7 +258,19 @@
                                     Click="DetachTab_Click" Tag="0"/>
                         </StackPanel>
                     </TabItem.Header>
-                    <Grid x:Name="MainChartCaptureArea" Margin="4">
+                    <Grid x:Name="MainChartCaptureArea" Margin="4" Background="White">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <StackPanel Margin="12,6,12,4"
+                                    Visibility="{Binding ChartTitle, Converter={StaticResource StringToVis}}">
+                            <TextBlock Text="{Binding ChartTitle}" FontSize="16" FontWeight="SemiBold"
+                                       Foreground="#222" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding ChartContext}" FontSize="11" Foreground="#666"
+                                       TextWrapping="Wrap" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <Grid Grid.Row="1">
                         <lvc:CartesianChart x:Name="MainChart"
                             PreviewMouseLeftButtonDown="MainChart_PreviewMouseLeftButtonDown"
                             PreviewMouseLeftButtonUp="MainChart_PreviewMouseLeftButtonUp"
@@ -361,6 +377,7 @@
                                            Visibility="{Binding TooltipExtra, Converter={StaticResource StringToVis}}"/>
                             </StackPanel>
                         </Border>
+                        </Grid>
                     </Grid>
                 </TabItem>
                 <TabItem>
@@ -416,6 +433,7 @@
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="File" Binding="{Binding FileId}" Width="50"/>
                             <DataGridTextColumn Header="Loop" Binding="{Binding LoopIndex}" Width="50"/>
+                            <DataGridTextColumn Header="Run" Binding="{Binding TestSequence}" Width="50"/>
                             <DataGridTextColumn Header="Module" Binding="{Binding ModuleType}" Width="70"/>
                             <DataGridTextColumn Header="Slot (-1 unknown)" Binding="{Binding SlotNumber}" Width="100"/>
                             <DataGridTextColumn Header="Channel" Binding="{Binding ChannelId}" Width="60"/>
@@ -818,9 +836,12 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="*"/>
                                 </Grid.RowDefinitions>
+                                <StackPanel>
+                                <TextBlock Text="{Binding ChartTitle}" Margin="6,2" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"/>
                                 <TextBlock Text="{Binding ResidualSummary}" Margin="6,2" FontSize="11"
                                            Foreground="#555" TextTrimming="CharacterEllipsis"
                                            ToolTip="{Binding ResidualSummary}"/>
+                                </StackPanel>
                                 <lvc:CartesianChart Grid.Row="1"
                                                     Series="{Binding ResidualSeries}"
                                                     XAxes="{Binding ResidualXAxes}"

@@ -36,7 +36,67 @@ foreach (var path in Directory.GetFiles(fixtureDirectory, "*.log").Order())
     Console.WriteLine($"{Path.GetFileName(path)}: points={result.TestResults.Count}, failed={result.TestResults.Count(p => p.IsFailed)}, coefficients={result.CalibrationCoefficients.Count}, events={result.DiagnosticObservations.Count}");
 }
 Check(parsed.Count >= 12, "expanded LogAll fixtures loaded");
+checks += MvpiFimiCheck.Run(parsed["28"], new[] { 800 });
+checks += HvpiLogCheck.Run(Path.Combine(fixtureDirectory, "30_HVPI_Real.log"), parsed["30"]);
+var cmEdges = parsed["31"].TestResults;
+Check(cmEdges.Count == 3, "MICM excludes calibration rows and invalid NaN errors");
+Check(cmEdges[0].TestItemName == "MICM, -40, 40 [HVPI_IR_1mA]" && cmEdges[0].IsFailed && cmEdges[0].HasExplicitResult &&
+    cmEdges[0].MeasureValue == 0.0000017 && cmEdges[0].Difference == 0.0000007, "MICM preserves current and source error with attached Failed suffix");
+Check(cmEdges[1].TestItemName == "MICM, -40, 40 [HVPI_IR_100mA]" && !cmEdges[1].IsFailed && cmEdges[1].TestSequence == 1,
+    "MICM range switch keeps distinct Item and sequence");
+Check(cmEdges[2].TestItemName == "I, 1mA, Force Current" && cmEdges[2].Difference == 0.0000001,
+    "following Force table does not inherit MICM range or column mapping");
+if (args.Length == 2 && args[0] == "--hvpi-log")
+{
+    checks += HvpiLogCheck.Run(args[1], await parser.ParseAsync(args[1]));
+    Console.WriteLine("Full real HVPI LOG: all 256 source verification rows, MICM ranges, numeric columns and failure markers verified.");
+}
+var hvpiColumns = parsed["29"].TestResults;
+Check(hvpiColumns.Count == 2 && hvpiColumns.All(p => p.ModuleType == ModuleType.HVPI && p.AdcMeasureValue.HasValue), "HVPI source-shaped ADC tables retain both points");
+Check(hvpiColumns[0].TestItemName == "V, -40, 40, Force Voltage" && hvpiColumns[0].Difference == 0.0002 &&
+    hvpiColumns[1].TestItemName == "V, -40, 40, Measure Voltage" && hvpiColumns[1].Difference == -0.0001,
+    "HVPI Force table with ADCDifference does not become Measure Voltage");
+if (args.Length == 2 && args[0] == "--mvpi-log")
+{
+    var realMvpi = await parser.ParseAsync(args[1]);
+    checks += MvpiFimiCheck.Run(realMvpi, Enumerable.Range(800, 32));
+    Console.WriteLine($"Full real MVPI LOG: {realMvpi.TestResults.Count} points; Ch800–831, three current ranges, 15V/42V Force/Measure verified.");
+}
+var mxviTransition = parsed["24"].TestResults;
+Check(mxviTransition.Select(p => p.TestSequence).SequenceEqual(new[] { 1, 1, 2 }), "MXVI repeated force tables retain independent sequences");
+Check(mxviTransition.Count == 3 && mxviTransition.All(p => p.ModuleType == ModuleType.MXVI && p.ChannelId == 200 && p.LoopIndex == 1),
+    "MXVI follow-up table preserves module/channel/loop");
+var mxviMeasure = mxviTransition.Single(p => p.TestItemName == "V, -25, 25, Measure Voltage");
+Near(mxviMeasure.Difference, 0.000660577718014706, "MXVI measure error stays separate from force error");
+Check(mxviMeasure.AdcMeasureValue.HasValue && mxviTransition.Count(p => p.TestItemName == "V, -25, 25, Force Voltage" && !p.AdcMeasureValue.HasValue) == 2,
+    "MXVI follow-up force table is classified as Force Voltage");
 var dc = parsed["01"];
+var modeTests = parsed["26"].TestResults;
+var expectedModeCounts = new Dictionary<string, int> {
+    ["V, -25, 25, Force Voltage [VI]"] = 11,
+    ["V, -25, 25, Force Voltage [AWG]"] = 11,
+    ["V, -25, 25, Measure Voltage"] = 11,
+    ["I, 300mA, Force Current [VI]"] = 13,
+    ["I, 300mA, Measure Current"] = 13,
+    ["V, -25, 25, Force Voltage,300mA,(ICH) Clamp Current High"] = 7,
+    ["V, -25, 25, Force Voltage,300mA,(ICL) Clamp Current Low"] = 7,
+    ["I, 300mA, Force Current, -25, 25, (VCH) Clamp Voltage High"] = 7,
+    ["I, 300mA, Force Current, -25, 25, (VCL) Clamp Voltage Low"] = 7
+};
+Check(modeTests.Count == 87 && modeTests.All(p => p.ChannelId == 200 && p.ModuleType == ModuleType.MXVI && p.TestSequence == 1), "VI/AWG fixture has all 87 points without inherited sections");
+foreach (var (item, count) in expectedModeCounts)
+    Check(modeTests.Count(p => p.TestItemName == item) == count, "VI/AWG section: " + item);
+Check(modeTests.Where(p => p.TestItemName.Contains("Measure ")).All(p => p.AdcMeasureValue.HasValue), "only measure sections contain ADC points");
+var repeatedSweeps = parsed["25"].TestResults;
+Check(repeatedSweeps.Count == 184, "real MXVI sweep excerpt preserves all 184 verification points");
+foreach (var channel in Enumerable.Range(200, 4))
+{
+    var force = repeatedSweeps.Where(p => p.ChannelId == channel && p.TestItemName.EndsWith("Force Voltage")).ToArray();
+    var measure = repeatedSweeps.Where(p => p.ChannelId == channel && p.TestItemName.EndsWith("Measure Voltage")).ToArray();
+    Check(force.Length == 22 && force.GroupBy(p => p.TestSequence).Count() == 2 &&
+        force.GroupBy(p => p.TestSequence).All(g => g.Count() == 11 && g.Select(p => p.ExpectValue).Distinct().Count() == 11), "two complete Force Voltage runs per channel");
+    Check(measure.Length == 11 && measure.All(p => p.TestSequence == 1 && p.AdcMeasureValue.HasValue), "one complete Measure Voltage run per channel");
+}
 Check(dc.TestResults.Count == 22 && dc.TestResults.Count(p => p.IsFailed) == 10, "DC expected 22 points / 10 failures");
 Check(dc.TestResults.Select(p => p.ModuleType).Distinct().Count() == 10, "DC module recognition");
 Check(dc.TestResults.Count(p => p.HasExplicitResult) == 10, "DC explicit Failed suffixes");
@@ -144,6 +204,8 @@ try
         foreach (var (name, result) in parsed)
         {
             var fileId = cache.InsertLogFile(result.FileInfo, name);
+            cache.InsertRunBatches(fileId, result.RunBatches);
+            Check(cache.GetRunBatches(new[] { fileId }).SequenceEqual(result.RunBatches.Select(b => b.Index)), "cache batch boundaries " + name);
             cache.InsertTestResults(fileId, result.TestResults);
             cache.InsertCalibrationCoefficients(fileId, result.CalibrationCoefficients);
             cache.InsertDiagnosticObservations(fileId, result.DiagnosticObservations);
@@ -157,7 +219,7 @@ try
                     actual.ChannelId == expected.ChannelId && actual.LoopIndex == expected.LoopIndex &&
                     actual.Timestamp == expected.Timestamp && actual.HasExplicitResult == expected.HasExplicitResult &&
                     actual.AdcMeasureValue == expected.AdcMeasureValue && actual.WaveValue == expected.WaveValue &&
-                    actual.OffsetValue == expected.OffsetValue && actual.IsReTest == expected.IsReTest,
+                    actual.OffsetValue == expected.OffsetValue && actual.IsReTest == expected.IsReTest && actual.TestSequence == expected.TestSequence,
                     "cache fields " + name + ":" + expected.LineNumber);
                 Near(actual.Difference, expected.Difference, "cache residual");
             }
@@ -202,6 +264,6 @@ finally
     SqliteConnection.ClearAllPools();
     if (Directory.Exists(cacheDirectory)) Directory.Delete(cacheDirectory, true);
 }
-checks += UiImportCheck.Run(fixtureDirectory);
+checks += UiImportCheck.Run(fixtureDirectory, args.Length == 2 && args[0] == "--batch-log" ? args[1] : null);
 checks += ComparisonCheck.Run();
 Console.WriteLine($"PASS: {checks} assertions. Parser, summaries, process logs, attribution, import ViewModel and isolated cache verified.");

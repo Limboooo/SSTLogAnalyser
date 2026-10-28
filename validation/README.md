@@ -1,5 +1,7 @@
 # 可重复验证用模拟 LOG
 
+补充：`24`～`27` 是用户提供的 MXVI LOG 的回归摘录，保留测量值并统一时间戳；并非下述模拟生成样本。`27_MXVI_Run_Batches.log` 包含两次运行（先 1 轮，再截取后一次运行的前 2 轮），共 1044 点。回归检查原始 Loop 编号、批次切换、缓存重载和基准对比隔离。可用 `dotnet run --project validation/Regression.csproj -c Release -- --batch-log <原始完整LOG路径>` 验证同一场景的完整文件。
+
 这些文件是 **SIMULATED 合成样本**，依据 2026-09-30 本机 `D:\1_SVN\SST\Trunk\S200VerCalDia` 工作副本的日志输出代码生成。测量值、板卡序列号、时间和误差均为人为构造，不是实机测试记录，也不表示这些模块在同一台机器上同时执行过。
 
 ## 直接在工具中使用
@@ -53,6 +55,14 @@ NEG 使用 `signedWAVE = -WAVE`。下面是**生成时注入的真实参数**，
 单 Channel 默认进入 Detail；选多个 Channel 或 ALL 默认进入 Channel Map。未限制 Loop 时，Detail 选严重程度更大的组，Ch1/2/3 应显示 Loop 2；Channel Map 也按每个 Channel 的最严重组显示。尝试切换 POS/NEG、Loop 1/2、展开图表并导出 PNG，确认图表和筛选一致。
 
 ## 自动回归入口
+
+`31_HVPI_MICM_Edges.log` 是合成边界样例，检查 MICM 末列紧跟 Failed、无前导逗号、量程切换、NaN 拒绝、校准数据排除及后续 Force 项不会继承 MICM 状态。
+
+`30_HVPI_Real.log` 来自真实 `AdaptstarSystemServiceTool_20261028-160956-LogAll.txt` 的原始行 454–845（Ch800、Loop 1），仅统一时间戳。共 256 个验证点，含两个电压范围 × 四个 IRange × 每组 9 点的 72 个 MICM 点，以及 13 条显式 Failed。`HvpiLogCheck.cs` 独立按源标题、列名和行号逐点核对解析结果，并检查校准点不会混入、真实 Re-test 不会丢失。完整文件可用 `dotnet run --project validation/Regression.csproj -c Release -- --hvpi-log <完整LOG路径>` 验证。
+
+`29_HVPI_ADC_Columns.log` 是按 `DcCal.cs` 中 HVPI Force 的七列表头（含 ADCMeasure、ADCDifference）及 Measure 的六列表头构造的合成样例，验证 Force 不会因包含 ADC 列被误改为 Measure；数值为人为构造，不是真实 HVPI LOG。
+
+`28_MVPI_FIMI_Real.log` 截取自真实 `AdaptstarSystemServiceTool_20260921-172654-LogAll.txt` 的原始行 237–808（Ch800），仅统一时间戳。保留 CM、夹位和三个电流量程的实测值，检查 FIMI 15V/42V 分段不会将后续 Force 点归入前一 Measure 项。完整文件可用 `dotnet run --project validation/Regression.csproj -c Release -- --mvpi-log <完整LOG路径>` 验证 Ch800–831。此样例不代表 HVPI 已经实测验证。
 
 在项目目录运行：
 

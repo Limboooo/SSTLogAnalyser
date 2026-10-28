@@ -19,6 +19,23 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly CacheService _cache;
     private readonly LogParser _parser;
+    public ObservableCollection<int> AvailableBatches { get; } = new();
+    [ObservableProperty] private int? _selectedBatch;
+
+    partial void OnSelectedBatchChanged(int? value)
+    {
+        _cache.SelectedBatch = value;
+        SetSelectedLoops(Array.Empty<int>());
+        RefreshChannels();
+        RefreshTestItems();
+        RefreshLoops();
+        RefreshCoefficientNames();
+        SetComparisonLoops(BaselineFile, BaselineLoops, true);
+        SetComparisonLoops(CurrentComparisonFile, CurrentComparisonLoops, false);
+        UpdateChart();
+        UpdateDiagnostics(force: true);
+        RefreshSecondaryViews();
+    }
     [ObservableProperty] private ISeries[] _series = Array.Empty<ISeries>();
     [ObservableProperty] private Axis[] _xAxes = Array.Empty<Axis>();
     [ObservableProperty] private Axis[] _yAxes = Array.Empty<Axis>();
@@ -32,6 +49,8 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _showLegend = true;
     [ObservableProperty] private bool _performanceMode;
     [ObservableProperty] private string _chartRenderSummary = string.Empty;
+    [ObservableProperty] private string _chartTitle = string.Empty;
+    [ObservableProperty] private string _chartContext = string.Empty;
     [ObservableProperty] private TimeSpan _chartAnimationsSpeed = TimeSpan.FromMilliseconds(250);
     [ObservableProperty] private bool _tooltipVisible;
     [ObservableProperty] private string _tooltipTitle = string.Empty;
@@ -304,6 +323,7 @@ public partial class MainViewModel : ObservableObject
                 });
                 var result = await _parser.ParseAsync(path, progress);
                 var fileId = _cache.InsertLogFile(result.FileInfo, hash);
+                _cache.InsertRunBatches(fileId, result.RunBatches);
                 result.FileInfo.FileId = fileId;
                 if (result.TestResults.Count > 0) _cache.InsertTestResults(fileId, result.TestResults);
                 if (result.CalibrationCoefficients.Count > 0)
@@ -317,6 +337,11 @@ public partial class MainViewModel : ObservableObject
                 LoadedFiles.Add(result.FileInfo);
                 StatusText = "Parsed: " + Path.GetFileName(path) + " (" + result.TestResults.Count + " data points)";
             }
+            var batches = _cache.GetRunBatches(LoadedFiles.Select(f => f.FileId).ToArray());
+            AvailableBatches.Clear();
+            foreach (var batch in batches) AvailableBatches.Add(batch);
+            if (!SelectedBatch.HasValue || !batches.Contains(SelectedBatch.Value))
+                SelectedBatch = batches.Count > 0 ? batches[^1] : null;
             RefreshFilters();
             RefreshCoefficientNames();
             UpdateChart();
@@ -512,6 +537,17 @@ public partial class MainViewModel : ObservableObject
         }
 
         ChartDataRows = data;
+        ChartTitle = $"{SelectedModule} / {SelectedTestItem}";
+        var chartFileIds = data.Select(r => r.FileId).ToHashSet();
+        var chartFiles = LoadedFiles.Where(f => chartFileIds.Contains(f.FileId)).ToArray();
+        string Labels(IEnumerable<int> values)
+        {
+            var items = values.Distinct().Order().ToArray();
+            return items.Length <= 6 ? string.Join(", ", items) : $"{items.Length} selected ({items[0]}…{items[^1]})";
+        }
+        ChartContext = $"{(chartFiles.Length == 1 ? chartFiles[0].FileName : $"{chartFiles.Length} files")} | " +
+            $"Batch {SelectedBatch?.ToString() ?? "All"} | CH {Labels(data.Select(r => r.ChannelId))} | " +
+            $"Loop {Labels(data.Select(r => r.LoopIndex))} | {data.Count:N0} points";
         _chartRowIndices.Clear();
         for (var index = 0; index < data.Count; index++)
             _chartRowIndices[data[index]] = index;
@@ -524,7 +560,9 @@ public partial class MainViewModel : ObservableObject
         var hasMultipleChannels = data.Select(r => r.ChannelId).Distinct().Take(2).Count() > 1;
         string Fpfx(long fid) => multiFile && fileNameMap.ContainsKey(fid) ? "[" + fileNameMap[fid] + "] " : "";
 
-        var groups = data.GroupBy(r => (r.FileId, r.ChannelId, r.LoopIndex))
+        var repeatedTests = data.GroupBy(r => (r.FileId, r.ChannelId, r.LoopIndex))
+            .Where(g => g.Select(r => r.TestSequence).Distinct().Count() > 1).Select(g => g.Key).ToHashSet();
+        var groups = data.GroupBy(r => (r.FileId, r.ChannelId, r.LoopIndex, r.TestSequence))
             .OrderBy(g => g.Key.FileId)
             .ThenBy(g => g.Key.ChannelId)
             .ThenBy(g => g.Key.LoopIndex)
@@ -536,6 +574,8 @@ public partial class MainViewModel : ObservableObject
                       (hasMultipleLoops ? " / " + loopLabel : "")
                     : Fpfx(group.Key.FileId) +
                       (hasMultipleChannels ? "Ch" + group.Key.ChannelId + " / " : "") + loopLabel;
+                if (repeatedTests.Contains((group.Key.FileId, group.Key.ChannelId, group.Key.LoopIndex)))
+                    title += " / Run " + group.Key.TestSequence;
                 return new ChartGroup(group.Key.FileId, group.Key.ChannelId, group.Key.LoopIndex, title, group.ToList());
             })
             .ToList();
@@ -570,6 +610,8 @@ public partial class MainViewModel : ObservableObject
 
     private void ClearChartDisplay()
     {
+        ChartTitle = string.Empty;
+        ChartContext = string.Empty;
         Series = Array.Empty<ISeries>();
         LegendItems = Array.Empty<LegendItem>();
         CurrentChartData.Clear();
@@ -783,10 +825,11 @@ public partial class MainViewModel : ObservableObject
                 r.FileId,
                 r.ChannelId,
                 r.LoopIndex,
+                r.TestSequence,
                 Component: r.ModuleType == ModuleType.MIXI ? NormalizeMixiComponent(r.ComponentType) : string.Empty))
             .OrderBy(g => g.Key.FileId).ThenBy(g => g.Key.ChannelId).ThenBy(g => g.Key.LoopIndex).ThenBy(g => g.Key.Component)
             .Select(group => (
-                Title: BuildDiagnosticGroupTitle(group.Key.FileId, group.Key.LoopIndex, group.Key.ChannelId, group.Key.Component),
+                Title: BuildDiagnosticGroupTitle(group.Key.FileId, group.Key.LoopIndex, group.Key.ChannelId, group.Key.Component) + " / Run " + group.Key.TestSequence,
                 Points: group.OrderBy(result => result.ExpectValue).ToArray()))
             .ToList();
         var limited = groups.Count > DiagnosticLargeSeriesThreshold || data.Count > DiagnosticLargePointThreshold;
@@ -1494,6 +1537,7 @@ public partial class MainViewModel : ObservableObject
     {
         RunSummaries.Clear(); RunFailedSlots.Clear(); SelectedRunSummary = null;
         LoadedFiles.Clear(); AvailableModules.Clear(); AvailableChannels.Clear();
+        AvailableBatches.Clear(); SelectedBatch = null;
         AvailableTestItems.Clear(); AvailableLoops.Clear();
         AvailableCoefficientNames.Clear();
         SelectedChannels.Clear(); SelectedLoops.Clear();

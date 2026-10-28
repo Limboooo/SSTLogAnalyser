@@ -1,0 +1,13 @@
+2026-09-30 10:00:00,000 INFO - Index 1 of 1
+2026-09-30 10:00:00,000 INFO - MXVI Channel 200: V, -25, 25, Force Voltage Verification
+2026-09-30 10:00:00,000 INFO - Channel:200 ItemName:V, -25, 25, Force Voltage Verification
+2026-09-30 10:00:00,000 INFO - , Expect, DmmMeasure, LowLimit, UpLimit, Difference,
+2026-09-30 10:00:00,000 INFO - , 0, -0.000892647427, -0.004, 0.004, -0.000892647427,
+2026-09-30 10:00:00,000 INFO - MXVI Channel 200: V, -25, 25, Measure Voltage Verification
+2026-09-30 10:00:00,000 INFO - Channel:200 ItemName:V, -25, 25, Measure Voltage Verification
+2026-09-30 10:00:00,000 INFO - , Expect, DmmMeasure, MXVIAdcMeasure, LowLimit, UpLimit, Difference,
+2026-09-30 10:00:00,000 INFO - , 0, -0.00158336185, -0.00224393956801471, -0.00400158336185, 0.00400158336185, 0.000660577718014706,
+2026-09-30 10:00:00,000 INFO - MXVI 200: V, -25, 25, Measure Voltage Verification Pass.
+2026-09-30 10:00:00,000 INFO - Channel:200 ItemName:V, -25, 25, Force Voltage Verification
+2026-09-30 10:00:00,000 INFO - , Expect, DmmMeasure, LowLimit, UpLimit, Difference,
+2026-09-30 10:00:00,000 INFO - , 0, -0.00156265077, -0.004, 0.004, -0.00156265077,

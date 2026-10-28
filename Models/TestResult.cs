@@ -4,6 +4,7 @@ public class TestResult
 {
     public long FileId { get; set; }
     public int LoopIndex { get; set; }
+    public int TestSequence { get; set; } = 1;
     public ModuleType ModuleType { get; set; }
     public int SlotNumber { get; set; } = -1;
     public int ChannelId { get; set; }
