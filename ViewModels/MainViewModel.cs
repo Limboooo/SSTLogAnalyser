@@ -508,14 +508,22 @@ public partial class MainViewModel : ObservableObject
         GainYAxes = new[] { new Axis { Name = "Gain", TextSize = 10 } };
         OffsetYAxes = new[] { new Axis { Name = "Offset", TextSize = 10 } };
 
-        ResidualXAxes = new[] { new Axis { Name = "Expected / Target", NameTextSize = 10, TextSize = 9 } };
-        ResidualYAxes = new[] { new Axis { Name = "Residual", NameTextSize = 10, TextSize = 9 } };
+        ResidualXAxes = SelectedModule == "AC" ? new[] { CreateAcAxis("Target (ns)") }
+            : new[] { new Axis { Name = "Expected / Target", NameTextSize = 10, TextSize = 9 } };
+        ResidualYAxes = SelectedModule == "AC" ? new[] { CreateAcAxis("Residual (ns)") }
+            : new[] { new Axis { Name = "Residual", NameTextSize = 10, TextSize = 9 } };
         WaveOffsetXAxes = new[] { new Axis { Name = "WAVE / OFFSET composition", TextSize = 9 } };
         WaveOffsetYAxes = new[] { new Axis { Name = "Error contribution (mV)", TextSize = 9 } };
     }
 
     private void UpdateChart()
     {
+        XAxes = SelectedModule == "AC"
+            ? new[] { CreateAcAxis("Target (ns)") }
+            : new[] { new Axis { Name = "Expected Value", NameTextSize = 13, TextSize = 11 } };
+        YAxes = SelectedModule == "AC"
+            ? new[] { CreateAcAxis("Error (ns)") }
+            : new[] { new Axis { Name = "Difference", NameTextSize = 13, TextSize = 11 } };
         ResetChartZoom();
         _focusedSeriesNames.Clear();
         HasSeriesFocus = false;
@@ -902,8 +910,10 @@ public partial class MainViewModel : ObservableObject
         });
 
         ResidualSeries = series.ToArray();
-        ResidualXAxes = new[] { new Axis { Name = "Expected / Target", NameTextSize = 10, TextSize = 9 } };
-        ResidualYAxes = new[] { new Axis { Name = "Residual", NameTextSize = 10, TextSize = 9 } };
+        ResidualXAxes = SelectedModule == "AC" ? new[] { CreateAcAxis("Target (ns)") }
+            : new[] { new Axis { Name = "Expected / Target", NameTextSize = 10, TextSize = 9 } };
+        ResidualYAxes = SelectedModule == "AC" ? new[] { CreateAcAxis("Residual (ns)") }
+            : new[] { new Axis { Name = "Residual", NameTextSize = 10, TextSize = 9 } };
         var rms = Math.Sqrt(data.Average(r => r.Difference * r.Difference));
         var worst = data.OrderByDescending(r => Math.Abs(r.Difference)).First();
         var worstUtilization = data.Select(CalculateToleranceUtilization).Where(v => v.HasValue).Select(v => v!.Value).DefaultIfEmpty(0).Max();
@@ -1485,6 +1495,7 @@ public partial class MainViewModel : ObservableObject
         ErrorEntries.Clear(); foreach (var e in _cache.GetErrors(fileIds)) ErrorEntries.Add(e);
         DiagnosticObservations.Clear();
         foreach (var o in _cache.GetDiagnosticObservations(fileIds)) DiagnosticObservations.Add(o);
+        RefreshAcReports();
         var failed = DiagnosticObservations.Count(o => o.Status.Equals("Fail", StringComparison.OrdinalIgnoreCase));
         var passed = DiagnosticObservations.Count(o => o.Status.Equals("Pass", StringComparison.OrdinalIgnoreCase));
         DiagnosticObservationSummary = $"{DiagnosticObservations.Count} observations; {failed} explicit failures, {passed} explicit passes. Unknown is not a failure.";
@@ -1542,6 +1553,9 @@ public partial class MainViewModel : ObservableObject
         AvailableCoefficientNames.Clear();
         SelectedChannels.Clear(); SelectedLoops.Clear();
         ErrorEntries.Clear(); DiagnosticObservations.Clear(); DeviceEntries.Clear(); SystemInfos.Clear();
+        AcReports.Clear(); BaselineAcReport = null; SelectedAcReport = null; UpdateAcOverview();
+        _acAlignmentTables.Clear(); RefreshAcAlignmentChoices();
+        OnPropertyChanged(nameof(HasAcOverview)); OnPropertyChanged(nameof(IsAcOverviewActive));
         DiagnosticObservationSummary = "Load a LOG file to see source-backed diagnostic events.";
         Statistics = Array.Empty<StatEntry>(); PassFailEntries.Clear(); LegendItems = Array.Empty<LegendItem>(); CurrentChartData.Clear(); ChartDataRows = Array.Empty<TestResult>(); SelectedChartRow = null;
         SelectedModule = null; SelectedTestItem = null;

@@ -15,7 +15,9 @@
 | MainWindow 模块/Channel/Re-test；DcCal DC 验证 CSV | DPS、DPSI、PMU、MVPI、MDM、HVPI、HDM、MXVI、PE、PPMU 测试点；ADC、残差、限值、Loop、Re-test | 01：22 点，10 超限；ADC=1.0003 |
 | DcCal Gain/Offset 与 MIXI M/C | 系数独立缓存；纯 CAL 模块可筛选 | 05：0 点、2 系数 |
 | ACCalClass SummaryReport 边沿 CSV | 数值边沿与整 Pin 显式结果分开；NA 不作数值或 Pass | 02：14 点，2 Fail |
-| ACCalClass FinalVerSummary 两级 pipe/comma 表 | 按边沿提取 Max/Min/Range；无判定保持 Unknown | 12：18 个汇总指标 |
+| ACCalClass FinalVerSummary 两级 pipe/comma 表 | 按边沿提取 Max/Min/Range，保留时钟和汇总表原始行号；Chart 内 AC 总览显示各 Pin 曲线，误差刻度 0.078 ns，可叠加同频率验证汇总，无判定保持 Unknown | 12：18 个汇总指标；32：双频率真实摘录 |
+| AC 同目标逐 Pin 相对时序 | 保留 SysClk begin/end 和每个验证表的边界；同表、同边沿、同目标按测量时间减基准 Pin。未知频率、缺失/重复基准不作比较，重复 Pin 排除。支持 64/128 连续 Pin 分组、组均值相对基准组及组内跨度；不代替 HwConfig 物理映射 | 33：500/250 MHz 同目标真实摘录 |
+| AC Across points | 同一文件/Loop/时钟/SysClk begin 验证段内，以 Point 顺序绘制 Group/Pin 误差热图和选中行趋势。支持目标误差及逐 Point 相对基准 Pin 偏移，缺失和重复点留空；相同目标的重复验证段不会合并 | 34：合成多验证段、Loop、缺失/重复数据；真实 VER 9 Point × 20 组 |
 | ACCalClass Slot ALIGN、CalValueLog、SearchingReport | 保留 Slot 判定、数值最终校准值；不再提取采样序列、NA 和搜索轨迹字段 | 12：2 Slot 判定、1 Cal value |
 | TmuCalClass Path Verification | 8 路径；false; 才是显式整体 Fail，空结果不补 Pass | 03：17 点、2 Fail |
 | TmuCalClass Path Cal Summary / Tmu0、Tmu1 表 | 每列独立提取；重复列名按顺序保留，并标记组别 | 13：18 个校准表指标 |

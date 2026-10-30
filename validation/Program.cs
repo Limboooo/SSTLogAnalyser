@@ -5,7 +5,24 @@ using SSTLogAnalyser.Models;
 using SSTLogAnalyser.Services;
 
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
-var fixtureDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../fixtures"));
+var fixtureDirectory = Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), "validation/fixtures"))
+    ? Path.Combine(Directory.GetCurrentDirectory(), "validation/fixtures")
+    : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../fixtures"));
+if (args.Length >= 2 && args[0] == "--ac-log")
+{
+    AcCheck.Run(args[1], true, args.Length > 2 ? args[2] : null);
+    return;
+}
+if (args.Length >= 2 && args[0] == "--ac-ver-log")
+{
+    await AcVerificationAudit.Run(args[1], args.Length > 2 ? args[2] : Path.Combine(Directory.GetCurrentDirectory(), "artifacts/AC_Ver_Audit.md"));
+    return;
+}
+if (args.Length == 3 && args[0] == "--ac-points-log")
+{
+    AcPointLogCheck.Run(args[1], args[2]);
+    return;
+}
 if (args.Length == 2 && args[0] == "--profile")
 {
     await ProfileImport.Run(args[1]);
@@ -266,4 +283,5 @@ finally
 }
 checks += UiImportCheck.Run(fixtureDirectory, args.Length == 2 && args[0] == "--batch-log" ? args[1] : null);
 checks += ComparisonCheck.Run();
+checks += AcCheck.Run(Path.Combine(fixtureDirectory, "32_AC_Real.log"));
 Console.WriteLine($"PASS: {checks} assertions. Parser, summaries, process logs, attribution, import ViewModel and isolated cache verified.");

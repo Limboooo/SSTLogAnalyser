@@ -209,7 +209,7 @@
                     <GroupBox Header="Test Item">
                         <ListBox ItemsSource="{Binding AvailableTestItems}" SelectedItem="{Binding SelectedTestItem}" MaxHeight="180"/>
                     </GroupBox>
-                    <GroupBox Header="Run Batch / 运行批次">
+                    <GroupBox Header="Run Batch">
                         <ComboBox ItemsSource="{Binding AvailableBatches}" SelectedItem="{Binding SelectedBatch}"
                                   ToolTip="Batch numbers follow execution order within each file; Loop numbers remain unchanged."/>
                     </GroupBox>
@@ -258,7 +258,24 @@
                                     Click="DetachTab_Click" Tag="0"/>
                         </StackPanel>
                     </TabItem.Header>
-                    <Grid x:Name="MainChartCaptureArea" Margin="4" Background="White">
+                    <Grid x:Name="MainChartCaptureArea" Background="White">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <CheckBox Content="AC: Show verification sweeps (uncheck for pin error overview)"
+                                  IsChecked="{Binding AcVerificationMode}" Margin="12,8"
+                                  Visibility="{Binding HasAcOverview, Converter={StaticResource BoolToVis}}"/>
+                    <Grid x:Name="GeneralChartPanel" Grid.Row="1" Margin="4" Background="White">
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsAcOverviewActive}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -379,6 +396,119 @@
                         </Border>
                         </Grid>
                     </Grid>
+                    <Grid x:Name="AcChartPanel" Grid.Row="1" Margin="6">
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsAcOverviewActive}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="2*"/>
+                            <RowDefinition>
+                                <RowDefinition.Style><Style TargetType="RowDefinition"><Setter Property="Height" Value="1.5*"/></Style></RowDefinition.Style>
+                            </RowDefinition>
+                        </Grid.RowDefinitions>
+                        <StackPanel>
+
+                        <DockPanel Margin="0,0,0,6">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0">
+                                <TextBlock Text="Edge" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <ComboBox Width="90" ItemsSource="{Binding AcEdges}" SelectedItem="{Binding SelectedAcEdge}"/>
+                            </StackPanel>
+                            <CheckBox Content="Use verification tables (point and pin analysis)" IsChecked="{Binding AcRelativeMode}" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <CheckBox Content="Across points: show error map and trend" IsChecked="{Binding AcPointView}" Margin="0,0,0,6">
+                            <CheckBox.Style><Style TargetType="CheckBox"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding AcRelativeMode}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></CheckBox.Style>
+                        </CheckBox>
+                        <DockPanel Margin="0,0,0,4">
+                            <DockPanel.Style><Style TargetType="DockPanel"><Style.Triggers><DataTrigger Binding="{Binding AcRelativeMode}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></DockPanel.Style>
+                            <TextBlock Text="Current report" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <ComboBox ItemsSource="{Binding AcReports}" SelectedItem="{Binding SelectedAcReport}"
+                                      DisplayMemberPath="Title" ToolTip="Select a file, loop, clock and report. The Run Batch filter on the left still applies."/>
+                        </DockPanel>
+                        <DockPanel Margin="0,0,0,8">
+                            <DockPanel.Style><Style TargetType="DockPanel"><Style.Triggers><DataTrigger Binding="{Binding AcRelativeMode}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></DockPanel.Style>
+                            <TextBlock Text="Baseline" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <Button Content="Clear" DockPanel.Dock="Right" Command="{Binding ClearAcBaselineCommand}"/>
+                            <ComboBox ItemsSource="{Binding AcReports}" SelectedItem="{Binding BaselineAcReport}"
+                                      DisplayMemberPath="Title" ToolTip="Optional: import a pre-calibration verification LOG with the same clock and test conditions. Calibration search values are not pre-calibration verification data."/>
+                        </DockPanel>
+                        <DockPanel Margin="0,0,0,8">
+                            <DockPanel.Style><Style TargetType="DockPanel"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding AcRelativeMode}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></DockPanel.Style>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0">
+                                <TextBlock Text="Group size" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <ComboBox Width="65" ItemsSource="{Binding AcGroupSizes}" SelectedItem="{Binding SelectedAcGroupSize}" Margin="0,0,12,0"/>
+                                <TextBlock Text="Base pin" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <ComboBox Width="80" ItemsSource="{Binding AcReferencePins}" SelectedItem="{Binding SelectedAcReferencePin}"/>
+                            </StackPanel>
+                            <TextBlock Text="Target table" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <ComboBox ItemsSource="{Binding AcAlignmentSets}" SelectedItem="{Binding SelectedAcAlignmentSet}" DisplayMemberPath="Title"/>
+                        </DockPanel>
+                        </StackPanel>
+                        <Border Grid.Row="1" Background="#E7F5FF" CornerRadius="5" Padding="12" Margin="0,0,0,6">
+                            <TextBlock Text="{Binding AcOverviewSummary}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        </Border>
+                        <TextBlock Grid.Row="2" Text="{Binding AcChartHelp}"
+                                   Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                        <GroupBox Grid.Row="3" Header="{Binding AcErrorChartTitle}">
+                            <GroupBox.Style><Style TargetType="GroupBox"><Style.Triggers><DataTrigger Binding="{Binding IsAcPointViewActive}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></GroupBox.Style>
+                            <lvc:CartesianChart Series="{Binding AcErrorSeries}" XAxes="{Binding AcOverviewXAxes}" YAxes="{Binding AcOverviewYAxes}"
+                                                LegendPosition="Top" ZoomMode="X" AnimationsSpeed="0:0:0"/>
+                        </GroupBox>
+                        <GroupBox Grid.Row="4" Header="Error range by pin">
+                            <GroupBox.Style><Style TargetType="GroupBox"><Style.Triggers><DataTrigger Binding="{Binding AcRelativeMode}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></GroupBox.Style>
+                            <lvc:CartesianChart Series="{Binding AcRangeSeries}" XAxes="{Binding AcRangePinAxes}" YAxes="{Binding AcRangeAxes}"
+                                                LegendPosition="Top" ZoomMode="X" AnimationsSpeed="0:0:0"/>
+                        </GroupBox>
+                        <GroupBox Grid.Row="4" Header="Pin detail - one group at a time">
+                            <GroupBox.Style><Style TargetType="GroupBox"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding AcRelativeMode}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger><DataTrigger Binding="{Binding IsAcPointViewActive}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></GroupBox.Style>
+                            <Grid>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                <DockPanel Margin="4,0,4,4">
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0">
+                                        <TextBlock Text="Detail group" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <ComboBox Width="75" ItemsSource="{Binding AcGroupRows}" SelectedItem="{Binding SelectedAcDetailGroup}" DisplayMemberPath="Group"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding AcPinDetailSummary}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                </DockPanel>
+                                <lvc:CartesianChart Grid.Row="1" Series="{Binding AcPinDetailSeries}" XAxes="{Binding AcDetailPinAxes}" YAxes="{Binding AcDetailErrorAxes}" LegendPosition="Top" ZoomMode="X" AnimationsSpeed="0:0:0"/>
+                            </Grid>
+                        </GroupBox>
+                        <Grid Grid.Row="3" Grid.RowSpan="2">
+                            <Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsAcPointViewActive}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Grid.Style>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="2*"/><RowDefinition Height="1.2*"/></Grid.RowDefinitions>
+                            <WrapPanel Margin="4,0,4,4">
+                                <TextBlock Text="Rows" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox Width="160" ItemsSource="{Binding AcPointDimensions}" SelectedItem="{Binding SelectedAcPointDimension}"/>
+                                <TextBlock Text="Metric" VerticalAlignment="Center" Margin="12,0,6,0"/>
+                                <ComboBox Width="155" ItemsSource="{Binding AcPointMetrics}" SelectedItem="{Binding SelectedAcPointMetric}"/>
+                                <TextBlock Text="Group" VerticalAlignment="Center" Margin="12,0,6,0"/>
+                                <ComboBox Width="60" ItemsSource="{Binding AcGroupRows}" SelectedItem="{Binding SelectedAcDetailGroup}" DisplayMemberPath="Group"/>
+                                <TextBlock Text="Trend row" VerticalAlignment="Center" Margin="12,0,6,0"/>
+                                <ComboBox Width="95" ItemsSource="{Binding AcPointRows}" SelectedItem="{Binding SelectedAcPointRow}" DisplayMemberPath="Label"/>
+                                <Button Content="Show selected point detail" Command="{Binding ShowAcPointDetailCommand}" Margin="12,0,0,0"/>
+                            </WrapPanel>
+                            <StackPanel Grid.Row="1" Margin="4,0,4,4">
+                                <TextBlock Text="{Binding AcPointSummary}" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding AcPointScaleLabel}" Foreground="#555" Margin="0,3,0,0"/>
+                            </StackPanel>
+                            <GroupBox Grid.Row="2" Header="Error across points - group cells are means; click a cell to inspect">
+                                <lvc:CartesianChart Series="{Binding AcPointHeatSeries}" XAxes="{Binding AcPointXAxes}" YAxes="{Binding AcPointYAxes}" Background="#E9ECEF" ZoomMode="Y" AnimationsSpeed="0:0:0"/>
+                            </GroupBox>
+                            <GroupBox Grid.Row="3" Header="Selected row - error / offset across points">
+                                <lvc:CartesianChart Series="{Binding AcPointTrendSeries}" XAxes="{Binding AcPointTrendXAxes}" YAxes="{Binding AcPointTrendYAxes}" LegendPosition="Top" ZoomMode="X" AnimationsSpeed="0:0:0"/>
+                            </GroupBox>
+                        </Grid>
+                    </Grid>
+                    </Grid>
                 </TabItem>
                 <TabItem>
                     <TabItem.Header>
@@ -417,6 +547,9 @@
                                     Click="DetachTab_Click" Tag="2"/>
                         </StackPanel>
                     </TabItem.Header>
+                    <Grid>
+                        <Grid>
+                            <Grid.Style><Style TargetType="Grid"><Style.Triggers><DataTrigger Binding="{Binding IsAcOverviewActive}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Grid.Style>
                     <DataGrid x:Name="ChartDataGrid" ItemsSource="{Binding ChartDataRows}" SelectedItem="{Binding SelectedChartRow, Mode=TwoWay}"
                               AutoGenerateColumns="False" IsReadOnly="True" CanUserSortColumns="True"
                               Margin="4" AlternatingRowBackground="#F8F8F8" SelectionMode="Single"
@@ -450,6 +583,89 @@
                             <DataGridTextColumn Header="Line" Binding="{Binding LineNumber}" Width="70"/>
                         </DataGrid.Columns>
                     </DataGrid>
+                        </Grid>
+                        <Grid x:Name="AcDataPanel" Margin="8">
+                            <Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsAcOverviewActive}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Grid.Style>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel Margin="4,0,4,8">
+                                <TextBlock Text="AC timing data" FontSize="16" FontWeight="SemiBold"/>
+                                <TextBlock Text="Selection follows Chart. Change the report, edge, reference pin or group size in Chart." Foreground="#555" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                <TextBlock Text="{Binding SelectedAcAlignmentSet.Title}" TextWrapping="Wrap" Margin="0,4,0,0">
+                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding AcRelativeMode}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock Text="{Binding SelectedAcReport.Title}" TextWrapping="Wrap" Margin="0,4,0,0">
+                                    <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding AcRelativeMode}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock Text="{Binding AcPointSummary}" TextWrapping="Wrap" Margin="0,4,0,0">
+                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsAcPointViewActive}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                            <Border Grid.Row="1" Background="#E7F5FF" CornerRadius="5" Padding="12" Margin="4,0,4,8">
+                                <TextBlock Text="{Binding AcOverviewSummary}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                            </Border>
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding AcPinRows}" AutoGenerateColumns="False" IsReadOnly="True" Margin="4"
+                                  CanUserAddRows="False" EnableRowVirtualization="True">
+                            <DataGrid.Style><Style TargetType="DataGrid"><Style.Triggers><DataTrigger Binding="{Binding AcRelativeMode}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></DataGrid.Style>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Pin" Binding="{Binding Pin}" Width="*"/>
+                                <DataGridTextColumn Header="Max (ns)" Binding="{Binding Max, StringFormat=F3}" Width="*"/>
+                                <DataGridTextColumn Header="Min (ns)" Binding="{Binding Min, StringFormat=F3}" Width="*"/>
+                                <DataGridTextColumn Header="Range (ns)" Binding="{Binding Range, StringFormat=F3}" Width="*"/>
+                                <DataGridTextColumn Header="Source line" Binding="{Binding Line}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                            <Grid Grid.Row="2">
+                                <Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding AcRelativeMode}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger><DataTrigger Binding="{Binding IsAcPointViewActive}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Grid.Style>
+                                <Grid.RowDefinitions><RowDefinition Height="2*"/><RowDefinition Height="5"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                        <DataGrid Grid.Row="0" ItemsSource="{Binding AcRelativeRows}" AutoGenerateColumns="False" IsReadOnly="True" Margin="4" CanUserAddRows="False" EnableRowVirtualization="True">
+                            <DataGrid.Style><Style TargetType="DataGrid"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding AcRelativeMode}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></DataGrid.Style>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Pin" Binding="{Binding Pin}" Width="*"/>
+                                <DataGridTextColumn Header="Measured (ns)" Binding="{Binding Measured, StringFormat=F3}" Width="*"/>
+                                <DataGridTextColumn Header="Group" Binding="{Binding Group}" Width="*"/>
+                                <DataGridTextColumn Header="Base (ns)" Binding="{Binding Reference, StringFormat=F3}" Width="*"/>
+                                <DataGridTextColumn Header="Offset (ps)" Binding="{Binding RelativePs, StringFormat=F1}" Width="*"/>
+                                <DataGridTextColumn Header="Source line" Binding="{Binding Line}" Width="*"/>
+                                <DataGridTextColumn Header="Base line" Binding="{Binding ReferenceLine}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                                <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="#DDD"/>
+                        <GroupBox Grid.Row="2" Header="Group alignment - means relative to base pin / base group; span within each group (ps)">
+                            <GroupBox.Style><Style TargetType="GroupBox"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding AcRelativeMode}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></GroupBox.Style>
+                            <DataGrid ItemsSource="{Binding AcGroupRows}" SelectedItem="{Binding SelectedAcDetailGroup, Mode=TwoWay}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" EnableRowVirtualization="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Group" Binding="{Binding Group}" Width="*"/>
+                                    <DataGridTextColumn Header="First Pin" Binding="{Binding FirstPin}" Width="*"/>
+                                    <DataGridTextColumn Header="Last Pin" Binding="{Binding LastPin}" Width="*"/>
+                                    <DataGridTextColumn Header="Valid pins" Binding="{Binding Count}" Width="*"/>
+                                    <DataGridTextColumn Header="Mean vs base pin (ps)" Binding="{Binding MeanPs, StringFormat=F1}" Width="1.5*"/>
+                                    <DataGridTextColumn Header="Mean vs base group (ps)" Binding="{Binding GroupOffsetPs, StringFormat=F1}" Width="1.5*"/>
+                                    <DataGridTextColumn Header="Group span (ps)" Binding="{Binding SpanPs, StringFormat=F1}" Width="1.5*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </GroupBox>
+                            </Grid>
+                        <GroupBox Grid.Row="2" Header="Across-point values (ps) - selection follows Chart">
+                            <GroupBox.Style><Style TargetType="GroupBox"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsAcPointViewActive}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></GroupBox.Style>
+                            <DataGrid ItemsSource="{Binding AcPointCells}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Point" Binding="{Binding Column}" Width="*"/>
+                                    <DataGridTextColumn Header="Group / Pin" Binding="{Binding Entity}" Width="*"/>
+                                    <DataGridTextColumn Header="Target (ns)" Binding="{Binding Target, StringFormat=F3}" Width="*"/>
+                                    <DataGridTextColumn Header="Error / Offset (ps)" Binding="{Binding ValuePs, StringFormat=F2}" Width="*"/>
+                                    <DataGridTextColumn Header="Valid pins" Binding="{Binding Count}" Width="*"/>
+                                    <DataGridTextColumn Header="Source table line" Binding="{Binding TableLine}" Width="*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </GroupBox>
+                        </Grid>
+                    </Grid>
                 </TabItem>
                 <TabItem>
                     <TabItem.Header>
@@ -605,6 +821,7 @@
                         </Grid>
                     </Grid>
                 </TabItem>
+
                 <TabItem Header="Source Events">
                     <Grid Margin="6">
                         <Grid.RowDefinitions>

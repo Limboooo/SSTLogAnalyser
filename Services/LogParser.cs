@@ -669,12 +669,13 @@ public class LogParser
         {
             if (!TryNumber(cells[i], out var measure)) continue; // NA is not a measurement.
             var error = measure - target;
+            // Values are in ns; allow only floating-point noise at an inclusive spec boundary.
             results.Add(new TestResult
             {
                 LoopIndex = loop, ModuleType = ModuleType.AC, SlotNumber = -1, ChannelId = pin,
                 TestItemName = "AC " + columns[i].Trim(), ExpectValue = target,
                 MeasureValue = measure, LowLimit = -spec, UpLimit = spec,
-                Difference = error, IsFailed = Math.Abs(error) > spec,
+                Difference = error, IsFailed = Math.Abs(error) > spec + 1e-9,
                 HasExplicitResult = false, LineNumber = line, Timestamp = timestamp
             });
         }

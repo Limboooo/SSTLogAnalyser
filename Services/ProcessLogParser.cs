@@ -15,6 +15,24 @@ public sealed class ProcessLogParser
     {
         var source = new DiagnosticLogLine(message, timestamp, lineNumber, loopIndex);
         var line = source.Message;
+        var verificationClock = Regex.Match(line, @"^-+SysClk\s+(?<clock>\d+(?:\.\d+)?)Mhz verification (?<phase>begin|end)-+$", RegexOptions.IgnoreCase);
+        if (verificationClock.Success)
+        {
+            _acVerificationClock = verificationClock.Groups["phase"].Value.Equals("begin", StringComparison.OrdinalIgnoreCase)
+                ? verificationClock.Groups["clock"].Value + " MHz" : "Clock unspecified";
+            if (verificationClock.Groups["phase"].Value.Equals("begin", StringComparison.OrdinalIgnoreCase))
+                yield return Observation("AC", "Verification sweep", _acVerificationClock, null, "", "Unknown");
+        }
+        if (line.StartsWith("#PinNum", StringComparison.OrdinalIgnoreCase) && line.Contains("Target(ns)") && line.Contains("Result"))
+            yield return Observation("AC", "Verification table", _acVerificationClock, null, "", "Unknown");
+        var acClock = Regex.Match(line, @"^-+CLK\s+(?<clock>\d+(?:\.\d+)?)MHz Verify result-+$");
+        if (acClock.Success)
+        {
+            _acClock = acClock.Groups["clock"].Value + " MHz";
+            _acEdges = null;
+        }
+        if (line.StartsWith("----|", StringComparison.Ordinal) && line.Contains("(ns)", StringComparison.Ordinal))
+            _acReport = $" [{_acClock} / Report L{lineNumber}]";
         if (line == "========== MIXI FFT ANALYSIS ==========")
         { _inFft = true; _fftResult = null; _fftSlot = null; _fftStatus = "Unknown"; }
         else if (_inFft)
@@ -83,7 +101,7 @@ public sealed class ProcessLogParser
                     yield return Observation("TMU", "Calibration", section + " " + field.Key + " [" + (++index) + "]", value, "ns", "Unknown", channel: tablePin);
                 else if (field.Key.Contains("(ns)", StringComparison.Ordinal) &&
                     (field.Key.EndsWith("Max", StringComparison.Ordinal) || field.Key.EndsWith("Min", StringComparison.Ordinal) || field.Key.EndsWith("Range", StringComparison.Ordinal)))
-                    yield return Observation("AC", "Summary", field.Key, value, "ns", "Unknown", channel: tablePin);
+                    yield return Observation("AC", "Summary", field.Key + _acReport, value, "ns", "Unknown", channel: tablePin);
             }
         }
         DiagnosticObservation Observation(string module, string kind, string item, double? value, string unit, string status,
@@ -97,6 +115,9 @@ public sealed class ProcessLogParser
     private sealed record DiagnosticLogLine(string Message, string Timestamp, int LineNumber, int LoopIndex);
     private string[]? _columns;
     private string[]? _acEdges;
+    private string _acClock = "Clock unspecified";
+    private string _acVerificationClock = "Clock unspecified";
+    private string _acReport = string.Empty;
     private string _section = string.Empty;
 
     // Only the AC/TMU/Sigma tables needed by Source Events are decoded here.

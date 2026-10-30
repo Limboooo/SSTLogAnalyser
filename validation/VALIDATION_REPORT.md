@@ -1,3 +1,15 @@
+# v1.2.8 发布验证（2026-10-30）
+
+本节为当前版本结果；后续章节保留历史记录。
+
+- `dotnet run --project validation/Regression.csproj -c Release --no-restore`：PASS，6,800 项断言，覆盖既有模块、导入 ViewModel、缓存、AC 总览、相对对齐及跨 Point 边界。
+- `--ac-log`：实际 AC CAL LOG 的 184,320 个点和图表/数据联动通过 2,649 项检查，包含 1,280 Pin 原始时序逐行核对及 78 ps 刻度。
+- `--ac-ver-log`：实际 VER Loop10 LOG 通过 491,544 项原文与缓存往返检查；115,200 个点、30,720 条汇总指标、18 张表，零解析错误、零 FAIL。只有 Loop1 有测量数据，Loop2～10 只有标记。
+- `--ac-points-log`：实际 VER LOG 通过 366 项检查，覆盖 9×20/9×10 分组矩阵、64×9 Pin 矩阵、两种误差指标、时钟/扫描隔离、实际 WPF 渲染与点击联动。
+- 三维预览未集成，没有新增运行依赖。以上为软件及源 LOG 验证，不代表重新执行实机 CAL/VER。
+
+完整更新范围见 `RELEASE_NOTES_v1.2.8.md`。安装包仍使用自带运行时的 x64 MSI，安装包与本机升级的实际输出记录放在忽略目录 `artifacts`，不打包用户 LOG 或缓存。
+
 # 验证记录（2026-09-30）
 
 最终固定回归命令：powershell -NoProfile -File .\validation\Run-Regression.ps1

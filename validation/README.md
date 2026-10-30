@@ -1,5 +1,23 @@
 # 可重复验证用模拟 LOG
 
+`34_AC_Point_Scopes.log` 为明确合成的 Across points 边界样例：Loop1 的 500 MHz 首段含 4 Point（P0/P1 目标误差均值 39 ps、相对 Pin0 均值分别 +39/-39 ps）；另含 250 MHz、同频率重复验证段、Loop2、缺失 Pin0 和重复 Pin1。缺失基准的列留空、重复 Pin 不参与组均值，趋势保留断点。
+
+`--ac-points-log <真实VER路径> <预览PNG路径>` 验证 500/250 MHz 的分离、64/128 分组、9 Point 的矩阵数值及热图点击联动，并输出 Chart/Data 两页的 WPF 渲染。Chart 中勾选 Use verification tables 后启用 Across points；Group 单元格为组均值，Pins in selected group 展开该组各 Pin，Metric 可切换 Error vs target / Offset vs base pin。颜色以零为中心、蓝早红晚、灰色缺失，数值表仍在 Data 页。
+
+AC 图形集中在 Chart；逐 Pin、误差包络和分组明细移至现有 Data 页，跟随 Chart 中的选择。相对时序模式下 Data 的逐 Pin 和分组表可拖动中间分隔条调整高度。渲染检查要求 Chart 中没有 DataGrid，三个 AC 表都位于 Data 页，并分别保存 Chart / Data 预览。
+
+相对时序 Chart 上层为组均值相对基准组的柱状图（ps），下层只显示所选一组的逐 Pin 散点（相对基准 Pin，ps）。点击柱或使用 Detail group 选择下钻；首次选择有效数据时默认组间偏移最大的组，后续保留组选择。散点图同时标出组均值和最差 Pin。两层基准不同，不能把组均值差当作单 Pin 偏移；64/128 Pin 的明细数量和分组数均有回归检查。
+
+`33_AC_Relative_Real.log` 是同一 AK LOG 的原始行 239714、244868–244871、297696、302850–302853，只有时间戳统一。两种时钟下目标均为 10 ns，RISE Pin1−Pin0 在 500 MHz 为 −78 ps、在 250 MHz 为 0。回归覆盖同目标跨时钟隔离、换基准 Pin、未知频率、缺失/重复基准、重复非基准 Pin，以及使用明确合成值验证 64/128 Pin 的分组边界、组均值差及组内跨度。
+
+完整 `--ac-log` 检查额外逐行回查全部 1280 个 Pin 的原始 RISE/Target/Pin0 数值。提供 PNG 路径时，同时输出所选 500 MHz / 10 ns / RISE 的逐 Pin 和分组 CSV。组号按 `Pin / GroupSize` 连续分组，组均值是所记录唯一有效 Pin 的平均值，不是额外的硬件测量。
+
+`32_AC_Real.log` 是 AK AC CAL 真实 LOG 的摘录：原始行 244868、284157、355681–355685、356969–356973，仅统一带日期行的时间戳。保留 Pin636 的 −0.312 ns 边界 PASS，以及 500/250 MHz 各两个 Pin 的六边沿汇总。回归验证边界误判、频率隔离、缓存导入和所有六种边沿切换。
+
+完整原始文件可运行 `dotnet run --project validation/Regression.csproj -c Release -- --ac-log <完整LOG路径> [预览PNG路径]`，核对 184320 条验证记录、两种频率各 1280 Pins，并可渲染 Chart 内实际 WPF AC 面板。检查包含 78 ps 刻度、正常曲线切换、跨文件同频率基准叠加和异频率拒绝。此完整文件检查针对 20261016-091010 这份 AK LOG 的固定预期。
+
+AC 总览与逐点曲线均在 Chart 中显示。前后对比须分别导入校准前、后的同频率同条件验证 LOG，并将前者选作“对比基准”；叠加的是共同 Pin 的误差包络，不计算未匹配条件下的改善率。单份 CAL LOG 的搜索轨迹、补偿值不能代替校准前验证数据。
+
 补充：`24`～`27` 是用户提供的 MXVI LOG 的回归摘录，保留测量值并统一时间戳；并非下述模拟生成样本。`27_MXVI_Run_Batches.log` 包含两次运行（先 1 轮，再截取后一次运行的前 2 轮），共 1044 点。回归检查原始 Loop 编号、批次切换、缓存重载和基准对比隔离。可用 `dotnet run --project validation/Regression.csproj -c Release -- --batch-log <原始完整LOG路径>` 验证同一场景的完整文件。
 
 这些文件是 **SIMULATED 合成样本**，依据 2026-09-30 本机 `D:\1_SVN\SST\Trunk\S200VerCalDia` 工作副本的日志输出代码生成。测量值、板卡序列号、时间和误差均为人为构造，不是实机测试记录，也不表示这些模块在同一台机器上同时执行过。
