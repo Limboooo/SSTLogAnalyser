@@ -273,6 +273,9 @@
                                     <DataTrigger Binding="{Binding IsAcOverviewActive}" Value="True">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
+                                    <DataTrigger Binding="{Binding HasTmuCharts}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Grid.Style>
@@ -396,6 +399,75 @@
                         </Border>
                         </Grid>
                     </Grid>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  Visibility="{Binding HasTmuCharts, Converter={StaticResource BoolToVis}}">
+                        <Grid x:Name="TmuChartPanel" Margin="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="TMU Calibration" FontSize="16" FontWeight="SemiBold" Margin="4"/>
+                                <WrapPanel>
+                                    <StackPanel Margin="4"><TextBlock Text="View"/><ComboBox Width="225" ItemsSource="{Binding TmuViews}" SelectedItem="{Binding SelectedTmuView}"/></StackPanel>
+                                    <StackPanel Margin="4" Visibility="{Binding HasTmuSecondChart, Converter={StaticResource BoolToVis}}"><TextBlock Text="Pin range"/><ComboBox Width="145" ItemsSource="{Binding TmuPinRanges}" SelectedItem="{Binding SelectedTmuPinRange}" DisplayMemberPath="Label"/></StackPanel>
+                                    <StackPanel Margin="4"><TextBlock Text="Selected pin"/><TextBox Width="85" Text="{Binding SelectedTmuPin, UpdateSourceTrigger=LostFocus, ValidatesOnExceptions=True}"/></StackPanel>
+                                    <StackPanel Margin="4">
+                                        <StackPanel.Style><Style TargetType="StackPanel"><Style.Triggers><DataTrigger Binding="{Binding IsTmuCompensation}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
+                                        <TextBlock Text="{Binding TmuReferenceLabel}"/>
+                                        <ComboBox Width="140" ItemsSource="{Binding TmuReferences}" SelectedItem="{Binding SelectedTmuReference}"/>
+                                    </StackPanel>
+                                </WrapPanel>
+                                <TextBlock Text="Source file / Outer Loop / TMU section" Margin="4,6,4,2"/>
+                                <ComboBox ItemsSource="{Binding TmuReports}" SelectedItem="{Binding SelectedTmuReport}" DisplayMemberPath="Title" Margin="4"/>
+                            </StackPanel>
+                            <TextBlock Grid.Row="1" Text="{Binding TmuSummary}" TextWrapping="Wrap" Margin="4,8"/>
+                            <StackPanel Grid.Row="2">
+                                <WrapPanel Visibility="{Binding IsTmuVerification, Converter={StaticResource BoolToVis}}">
+                                    <CheckBox Content="VOL → VOL" IsChecked="{Binding TmuVolVol}" Foreground="#2196F3" Margin="6"/>
+                                    <CheckBox Content="VOH → VOH" IsChecked="{Binding TmuVohVoh}" Foreground="#4CAF50" Margin="6"/>
+                                    <CheckBox Content="VOH → VOL" IsChecked="{Binding TmuVohVol}" Foreground="#FF9800" Margin="6"/>
+                                    <CheckBox Content="VOL → VOH" IsChecked="{Binding TmuVolVoh}" Foreground="#9C27B0" Margin="6"/>
+                                </WrapPanel>
+                                <WrapPanel Visibility="{Binding IsTmuCompensation, Converter={StaticResource BoolToVis}}">
+                                    <CheckBox Content="VOL PinDiff" IsChecked="{Binding TmuVolDiff}" Foreground="#2196F3" Margin="6"/>
+                                    <CheckBox Content="VOH PinDiff" IsChecked="{Binding TmuVohDiff}" Foreground="#4CAF50" Margin="6"/>
+                                </WrapPanel>
+                            </StackPanel>
+                            <GroupBox Grid.Row="3" Header="{Binding Tmu0Title}">
+                                <lvc:CartesianChart Height="230" Series="{Binding Tmu0Series}" XAxes="{Binding Tmu0XAxes}" YAxes="{Binding Tmu0YAxes}" ZoomMode="X" AnimationsSpeed="0:0:0"/>
+                            </GroupBox>
+                            <GroupBox Grid.Row="4" Header="{Binding Tmu1Title}" Visibility="{Binding HasTmuSecondChart, Converter={StaticResource BoolToVis}}">
+                                <lvc:CartesianChart Height="230" Series="{Binding Tmu1Series}" XAxes="{Binding Tmu1XAxes}" YAxes="{Binding Tmu1YAxes}" ZoomMode="X" AnimationsSpeed="0:0:0"/>
+                            </GroupBox>
+                            <StackPanel Grid.Row="5" Visibility="{Binding IsTmuVerification, Converter={StaticResource BoolToVis}}">
+                                <WrapPanel Margin="4,8">
+                                    <TextBlock Text="Trend path" VerticalAlignment="Center" Margin="0,0,6,0"/><ComboBox Width="140" ItemsSource="{Binding TmuPaths}" SelectedItem="{Binding SelectedTmuTrendPath}"/>
+                                    <TextBlock Text="Trend statistics" VerticalAlignment="Center" Margin="14,0,6,0"/><ComboBox Width="260" ItemsSource="{Binding TmuTrendModes}" SelectedItem="{Binding SelectedTmuTrendMode}"/>
+                                </WrapPanel>
+                                <GroupBox Header="{Binding TmuTrendTitle}">
+                                    <lvc:CartesianChart Height="230" Series="{Binding TmuTrendSeries}" XAxes="{Binding TmuTrendXAxes}" YAxes="{Binding TmuTrendYAxes}" LegendPosition="Top" ZoomMode="X" AnimationsSpeed="0:0:0"/>
+                                </GroupBox>
+                            </StackPanel>
+                            <GroupBox Grid.Row="6" Header="Selected pin details - path: ns; timebase: measured Hz / error ppm">
+                                <DataGrid ItemsSource="{Binding TmuDetailRows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" MaxHeight="270">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Pin" Binding="{Binding Pin}"/>
+                                        <DataGridTextColumn Header="TMU" Binding="{Binding TmuLabel}"/>
+                                        <DataGridTextColumn Header="Start → Stop" Binding="{Binding PathName}"/>
+                                        <DataGridTextColumn Header="Reference" Binding="{Binding Reference, StringFormat=G}"/>
+                                        <DataGridTextColumn Header="Measured" Binding="{Binding Measured, StringFormat=0.######}"/>
+                                        <DataGridTextColumn Header="Error / Compensation" Binding="{Binding Value, StringFormat=0.######}"/>
+                                        <DataGridTextColumn Header="Low limit" Binding="{Binding Low}"/><DataGridTextColumn Header="High limit" Binding="{Binding High}"/>
+                                        <DataGridTextColumn Header="Source result" Binding="{Binding SourceStatus}"/>
+                                        <DataGridTextColumn Header="Source line" Binding="{Binding Line}"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </GroupBox>
+                            <TextBlock Grid.Row="7" Text="{Binding TmuHelp}" TextWrapping="Wrap" Foreground="#555" Margin="4,8"/>
+                        </Grid>
+                    </ScrollViewer>
                     <Grid x:Name="AcChartPanel" Grid.Row="1" Margin="6">
                         <Grid.Style>
                             <Style TargetType="Grid">

@@ -6,7 +6,7 @@ namespace SSTLogAnalyser.Services;
 
 public class CacheService : IDisposable
 {
-    private const int CurrentParserVersion = 17;
+    private const int CurrentParserVersion = 18;
     public int? SelectedBatch { get; set; }
     private readonly string _dbPath;
     private SqliteConnection _connection;
@@ -429,7 +429,7 @@ public class CacheService : IDisposable
     {
         using var cmd = _connection.CreateCommand();
         var where = BuildFileIdWhere(fileIds);
-        cmd.CommandText = "SELECT DISTINCT module_type FROM (SELECT file_id, module_type, line_number FROM test_results UNION SELECT file_id, module_type, line_number FROM calibration_coefficients) WHERE " + where + " ORDER BY module_type";
+        cmd.CommandText = "SELECT DISTINCT module_type FROM (SELECT file_id, module_type, line_number FROM test_results UNION SELECT file_id, module_type, line_number FROM calibration_coefficients UNION SELECT file_id, module AS module_type, line_number FROM diagnostic_observations WHERE module = 'TMU' AND kind IN ('Calibration', 'Clock')) WHERE " + where + " ORDER BY module_type";
         AddFileIdParams(cmd, fileIds);
         var list = new List<string>();
         using var reader = cmd.ExecuteReader();

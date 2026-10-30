@@ -10,11 +10,37 @@ public sealed class ProcessLogParser
     private int? _fftSlot;
     private string _fftStatus = "Unknown";
     private bool _inFft;
+    private string _tmuPhase = string.Empty;
+    private double? _tmuFrequency, _tmuEcLow, _tmuEcHigh;
     private const string Number = @"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?";
     public IEnumerable<DiagnosticObservation> Parse(string message, string timestamp, int lineNumber, int loopIndex)
     {
         var source = new DiagnosticLogLine(message, timestamp, lineNumber, loopIndex);
         var line = source.Message;
+        string? tmuSection = line switch
+        {
+            "Start TMU Calibration" => "Clock calibration",
+            "Start TMU Verification" => "Clock verification",
+            _ when line.Contains("Tmu Path Cal Summary Log", StringComparison.Ordinal) => "Path calibration",
+            _ when line.Contains("Start TMU Path Verification", StringComparison.Ordinal) => "Path verification",
+            _ => null
+        };
+        if (tmuSection != null)
+        {
+            _tmuPhase = tmuSection;
+            _tmuFrequency = _tmuEcLow = _tmuEcHigh = null;
+            yield return Observation("TMU", "TMU section", tmuSection, null, "", "Unknown");
+        }
+        if (_tmuPhase.StartsWith("Path verification", StringComparison.Ordinal) && line.Contains("Loop Count [", StringComparison.Ordinal))
+            yield return Observation("TMU", "TMU section", "Path verification / " + line.Trim('*', ' '), null, "", "Unknown");
+        if (line == "End TMU Calibration") { _tmuPhase = string.Empty; _tmuFrequency = _tmuEcLow = _tmuEcHigh = null; }
+        if (_tmuPhase.Length > 0)
+        {
+            var frequency = Regex.Match(line, @"FEPT\s*=\s*(?<value>" + Number + @")Hz");
+            if (frequency.Success) _tmuFrequency = Num(frequency.Groups["value"].Value);
+            var ecBounds = Regex.Match(line, @"^Expect EC between\s*(?<low>" + Number + @")ppm\s*~\s*(?<high>" + Number + @")ppm");
+            if (ecBounds.Success) { _tmuEcLow = Num(ecBounds.Groups["low"].Value); _tmuEcHigh = Num(ecBounds.Groups["high"].Value); }
+        }
         var verificationClock = Regex.Match(line, @"^-+SysClk\s+(?<clock>\d+(?:\.\d+)?)Mhz verification (?<phase>begin|end)-+$", RegexOptions.IgnoreCase);
         if (verificationClock.Success)
         {
@@ -67,7 +93,8 @@ public sealed class ProcessLogParser
             yield return Observation("TMU", "Clock", "FMEA", Num(clock.Groups["freq"].Value), "Hz", status, channel: pin);
             var bounds = Regex.Match(line, @"Expect EC between\s*(?<low>" + Number + @")ppm\s*~\s*(?<high>" + Number + @")ppm");
             yield return Observation("TMU", "Clock", "EC", Num(clock.Groups["ec"].Value), "ppm", status, channel: pin,
-                low: bounds.Success ? Num(bounds.Groups["low"].Value) : null, high: bounds.Success ? Num(bounds.Groups["high"].Value) : null);
+                low: bounds.Success ? Num(bounds.Groups["low"].Value) : _tmuEcLow,
+                high: bounds.Success ? Num(bounds.Groups["high"].Value) : _tmuEcHigh, target: _tmuFrequency);
             var cal = Regex.Match(line, @"Calibration Value\s*-\s*(?<value>" + Number + @")ns");
             if (cal.Success) yield return Observation("TMU", "Calibration", "Clock calibration value", Num(cal.Groups["value"].Value), "ns", "Unknown", channel: pin);
         }
@@ -105,9 +132,9 @@ public sealed class ProcessLogParser
             }
         }
         DiagnosticObservation Observation(string module, string kind, string item, double? value, string unit, string status,
-            int? slot = null, int? channel = null, double? low = null, double? high = null) => new() {
+            int? slot = null, int? channel = null, double? low = null, double? high = null, double? target = null) => new() {
                 Module = module, Kind = kind, Item = item, Value = value, Unit = unit, Status = status, Slot = slot, Channel = channel,
-                LowLimit = low, HighLimit = high, Timestamp = source.Timestamp, LineNumber = source.LineNumber,
+                LowLimit = low, HighLimit = high, Target = target, Timestamp = source.Timestamp, LineNumber = source.LineNumber,
                 LoopIndex = source.LoopIndex, RawMessage = line };
     }
     private static double Num(string text) => double.Parse(text, CultureInfo.InvariantCulture);

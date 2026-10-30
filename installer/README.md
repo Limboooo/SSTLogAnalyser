@@ -17,10 +17,10 @@ powershell -ExecutionPolicy Bypass -File .\installer\Build-Installer.ps1
 
 Outputs:
 
-- `dist\SSTLogAnalyser-v1.2.8-win-x64.msi`
-- `dist\SSTLogAnalyser-v1.2.8-win-x64.msi.sha256`
+- `dist\SSTLogAnalyser-v1.2.9-win-x64.msi`
+- `dist\SSTLogAnalyser-v1.2.9-win-x64.msi.sha256`
 
-The current release is v1.2.8. It includes AC overview, relative Pin/Group timing, across-point heatmaps and trends, and the AC boundary parsing fix. See `RELEASE_NOTES_v1.2.8.md` for verified scope. The v1.2.8 share ZIP includes the installer, checksum, manual, release notes, Chinese installation instructions and the two synthetic baseline-comparison samples; it excludes real hardware LOGs and user cache.
+The current release is v1.2.9. It adds dedicated TMU path verification, calibration compensation and timebase EC charts, linked pin details and reference-time trends. Existing AC overview, relative Pin/Group timing and across-point views are retained. See `RELEASE_NOTES_v1.2.9.md` for verified scope. The v1.2.9 share ZIP includes the installer, checksum, manual, release notes, Chinese installation instructions and the two synthetic baseline-comparison samples; it excludes real hardware LOGs and user cache.
 
 Previous v1.2.7 validation: its MSI is 53.53 MiB and its share ZIP is 53.13 MiB. Administrative extraction succeeded; all 419 extracted payload files matched the published files by SHA256. The extracted application created a responsive window, and its host trace confirmed use of the bundled `hostfxr.dll` as a self-contained app. The MSI product version, shortcut targets, package checksum and ZIP's embedded MSI were checked. The published parser also reproduced all 256 real HVPI verification points and 13 failures with zero source-column mismatches. Installation on another computer has not been tested.
 

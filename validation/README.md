@@ -1,5 +1,9 @@
 # 可重复验证用模拟 LOG
 
+`35_TMU_Real.log` 为本次 `AdaptstarSystemServiceTool_20261021-163320-LogAll.txt` 的真实摘录，仅统一时间戳：保留 Pin0/9 的六种参考频率、两套 PinDiff，以及 160/2000 ns 下的八种 TMU/路径组合。它不是模拟测量值。
+
+运行 `dotnet run --project validation/Regression.csproj -c Release -- --tmu-log <完整LOG路径> [预览PNG路径]`，按该完整原始文件的固定预期核对 49,152 个路径值、−0.597/+0.655 ns 极值和 192 个时基 EC 点。每个路径值还独立回读原始行，核对 Pin、列位置、参考值和差值；导入检查包含 SQLite 重载、视图/参考值切换、32 Pin 范围、路径开关、缺失/重复键、文件/外层 Loop/内层 Loop 隔离。提供 PNG 路径时渲染实际 WPF TMU 面板并触发测量点点击联动。
+
 `34_AC_Point_Scopes.log` 为明确合成的 Across points 边界样例：Loop1 的 500 MHz 首段含 4 Point（P0/P1 目标误差均值 39 ps、相对 Pin0 均值分别 +39/-39 ps）；另含 250 MHz、同频率重复验证段、Loop2、缺失 Pin0 和重复 Pin1。缺失基准的列留空、重复 Pin 不参与组均值，趋势保留断点。
 
 `--ac-points-log <真实VER路径> <预览PNG路径>` 验证 500/250 MHz 的分离、64/128 分组、9 Point 的矩阵数值及热图点击联动，并输出 Chart/Data 两页的 WPF 渲染。Chart 中勾选 Use verification tables 后启用 Across points；Group 单元格为组均值，Pins in selected group 展开该组各 Pin，Metric 可切换 Error vs target / Offset vs base pin。颜色以零为中心、蓝早红晚、灰色缺失，数值表仍在 Data 页。

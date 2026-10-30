@@ -6,9 +6,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <Version>1.2.8</Version>
-    <AssemblyVersion>1.2.8.0</AssemblyVersion>
-    <FileVersion>1.2.8.0</FileVersion>
+    <Version>1.2.9</Version>
+    <AssemblyVersion>1.2.9.0</AssemblyVersion>
+    <FileVersion>1.2.9.0</FileVersion>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
@@ -23,6 +23,7 @@
     <None Update="RELEASE_NOTES_v1.2.6.md" CopyToPublishDirectory="PreserveNewest" />
     <None Update="RELEASE_NOTES_v1.2.7.md" CopyToPublishDirectory="PreserveNewest" />
     <None Update="RELEASE_NOTES_v1.2.8.md" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="RELEASE_NOTES_v1.2.9.md" CopyToPublishDirectory="PreserveNewest" />
     <None Update="USER_MANUAL.md" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 

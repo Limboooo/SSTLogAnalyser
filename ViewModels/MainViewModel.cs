@@ -164,6 +164,7 @@ public partial class MainViewModel : ObservableObject
             {
                 UpdateChart();
                 UpdateDiagnostics();
+                RefreshTmuReports();
             }
         };
         InitializeChart();
@@ -265,6 +266,7 @@ public partial class MainViewModel : ObservableObject
 
         UpdateChart();
         UpdateDiagnostics();
+        RefreshTmuReports();
     }
 
     [RelayCommand]
@@ -1496,6 +1498,7 @@ public partial class MainViewModel : ObservableObject
         DiagnosticObservations.Clear();
         foreach (var o in _cache.GetDiagnosticObservations(fileIds)) DiagnosticObservations.Add(o);
         RefreshAcReports();
+        RefreshTmuReports();
         var failed = DiagnosticObservations.Count(o => o.Status.Equals("Fail", StringComparison.OrdinalIgnoreCase));
         var passed = DiagnosticObservations.Count(o => o.Status.Equals("Pass", StringComparison.OrdinalIgnoreCase));
         DiagnosticObservationSummary = $"{DiagnosticObservations.Count} observations; {failed} explicit failures, {passed} explicit passes. Unknown is not a failure.";
@@ -1554,6 +1557,7 @@ public partial class MainViewModel : ObservableObject
         SelectedChannels.Clear(); SelectedLoops.Clear();
         ErrorEntries.Clear(); DiagnosticObservations.Clear(); DeviceEntries.Clear(); SystemInfos.Clear();
         AcReports.Clear(); BaselineAcReport = null; SelectedAcReport = null; UpdateAcOverview();
+        RefreshTmuReports();
         _acAlignmentTables.Clear(); RefreshAcAlignmentChoices();
         OnPropertyChanged(nameof(HasAcOverview)); OnPropertyChanged(nameof(IsAcOverviewActive));
         DiagnosticObservationSummary = "Load a LOG file to see source-backed diagnostic events.";

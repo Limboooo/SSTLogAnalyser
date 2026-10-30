@@ -19,9 +19,9 @@
 | AC 同目标逐 Pin 相对时序 | 保留 SysClk begin/end 和每个验证表的边界；同表、同边沿、同目标按测量时间减基准 Pin。未知频率、缺失/重复基准不作比较，重复 Pin 排除。支持 64/128 连续 Pin 分组、组均值相对基准组及组内跨度；不代替 HwConfig 物理映射 | 33：500/250 MHz 同目标真实摘录 |
 | AC Across points | 同一文件/Loop/时钟/SysClk begin 验证段内，以 Point 顺序绘制 Group/Pin 误差热图和选中行趋势。支持目标误差及逐 Point 相对基准 Pin 偏移，缺失和重复点留空；相同目标的重复验证段不会合并 | 34：合成多验证段、Loop、缺失/重复数据；真实 VER 9 Point × 20 组 |
 | ACCalClass Slot ALIGN、CalValueLog、SearchingReport | 保留 Slot 判定、数值最终校准值；不再提取采样序列、NA 和搜索轨迹字段 | 12：2 Slot 判定、1 Cal value |
-| TmuCalClass Path Verification | 8 路径；false; 才是显式整体 Fail，空结果不补 Pass | 03：17 点、2 Fail |
+| TmuCalClass Path Verification | 8 路径；false; 才是显式整体 Fail，空结果不补 Pass；专用 Chart 按 Pin/参考时间绘制误差，源文件/批次/外层 Loop/内层 Loop 分段；重复键排除 | 03：17 点、2 Fail；35：真实 TMU 摘录；--tmu-log 完整日志验证 |
 | TmuCalClass Path Cal Summary / Tmu0、Tmu1 表 | 每列独立提取；重复列名按顺序保留，并标记组别 | 13：18 个校准表指标 |
-| TmuCalClass FMEA/EC、Calibration Value、FAIL-FMU/TMU | 频率、EC、校准值、同一行 ppm 范围与结果；不由颜色推断结果 | 13：8 个时钟/校准事件 |
+| TmuCalClass FMEA/EC、Calibration Value、FAIL-FMU/TMU | 频率、EC、校准值、同一行或当前段 ppm 范围与结果；保留 FEPT 参考频率用于时基 Chart；不由颜色推断结果 | 13：8 个时钟/校准事件；35：6 个频率 |
 | DcDiag Diagnosis、Pin/Channel List、Line Resistance、PE Leakage、PPMU | 数值/结果/明确限值；电压预检标 V、电阻标 ohm；比较状态另保留二进制文本 | 04、16 |
 | DcDiag MXVI Short | FI 检查 MV(V)，FV 检查 MI(A)；Check 范围支持实际 F8 补空格格式 | 20：FI/FV 检查及边界；另含 Resule 电阻判定 |
 | DcDiag MIXI FFT 多行表及单行结果 | Result/Slot/DTZ CH 总体结果；六指标、V 容差、SNR/THD 边界；NaN 保留空值及明确判定 | 19：1 整体判定、6 指标；频率百分比限值仍在事件原文中，不作为 Hz 限值 |
@@ -42,7 +42,7 @@
 
 当前 Release/Debug 的 AdaptstarSystemServiceToolLog4cpp.config.xml 使用 %date  %-5level - %message%newline；支持逗号/小数点毫秒、INFO/WARN/ERROR/FATAL/DEBUG/TRACE 及多行续行。
 
-运行 powershell -NoProfile -File .\validation\Run-Regression.ps1，验证结构化预期、缓存/旧版本失效及实际 MainViewModel 导入/筛选/MIXI/限值图表数据。缓存解析版本为 8，重新加载旧文件会重解析。
+运行 powershell -NoProfile -File .\validation\Run-Regression.ps1，验证结构化预期、缓存/旧版本失效及实际 MainViewModel 导入/筛选/MIXI/限值图表数据。当前缓存解析版本为 18，重新加载旧文件会重解析。
 
 删除通用字段服务后，真实 45.07 MiB LogAll 测得解析 2.908 秒、结构化缓存写入 1.351 秒；提取 186,408 个测试点和 299 个事件，数量与修改前一致。共享文件 SHA256 另耗时 4.274 秒；不含实际窗口绘制耗时。
 

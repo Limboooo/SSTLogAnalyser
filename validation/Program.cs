@@ -13,6 +13,11 @@ if (args.Length >= 2 && args[0] == "--ac-log")
     AcCheck.Run(args[1], true, args.Length > 2 ? args[2] : null);
     return;
 }
+if (args.Length >= 2 && args[0] == "--tmu-log")
+{
+    TmuCheck.Run(args[1], true, args.Length > 2 ? args[2] : null);
+    return;
+}
 if (args.Length >= 2 && args[0] == "--ac-ver-log")
 {
     await AcVerificationAudit.Run(args[1], args.Length > 2 ? args[2] : Path.Combine(Directory.GetCurrentDirectory(), "artifacts/AC_Ver_Audit.md"));
@@ -170,7 +175,7 @@ foreach (var group in parsed["07"].TestResults.GroupBy(p => p.ChannelId))
     Check(!MixiWaveOffsetAnalyzer.TryAnalyze(group, out _), "reject insufficient / collinear / inconsistent model Ch" + group.Key);
 Check(parsed["12"].DiagnosticObservations.Count == 21, "AC final summary 18 metrics + 2 align verdicts + 1 calibration value");
 Check(parsed["12"].DiagnosticObservations.Count(p => p.Status == "Fail") == 1, "only explicit AC alignment failure");
-Check(parsed["13"].DiagnosticObservations.Count == 26, "TMU path 18 cells + clock / EC / FMU events");
+Check(parsed["13"].DiagnosticObservations.Count == 27, "TMU path 18 cells + clock / EC / FMU events + section boundary");
 Check(parsed["13"].DiagnosticObservations.Count(p => p.Item.Contains("VolStart_VolStop(ns)")) == 4, "repeated TMU column labels retained");
 Check(parsed["13"].DiagnosticObservations.Single(p => p.Item == "EC" && p.Channel == 2).HighLimit == 50, "TMU explicit EC bounds");
 Check(parsed["14"].DiagnosticObservations.Count == 4, "register and Flash verdicts");
@@ -284,4 +289,5 @@ finally
 checks += UiImportCheck.Run(fixtureDirectory, args.Length == 2 && args[0] == "--batch-log" ? args[1] : null);
 checks += ComparisonCheck.Run();
 checks += AcCheck.Run(Path.Combine(fixtureDirectory, "32_AC_Real.log"));
+checks += TmuCheck.Run(Path.Combine(fixtureDirectory, "35_TMU_Real.log"));
 Console.WriteLine($"PASS: {checks} assertions. Parser, summaries, process logs, attribution, import ViewModel and isolated cache verified.");

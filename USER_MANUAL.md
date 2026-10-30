@@ -1,5 +1,18 @@
 # SST Log Analyser 使用手册
 
+## TMU 校准图表
+
+导入 TMU 日志后，侧栏 Module 选择 `TMU`，在现有 Chart 页使用专用图表：
+
+- **路径验证误差**：选择源文件/外层 Loop/TMU 验证段、参考时间、全部 Pin 或连续 32 Pin 范围。TMU0/1 上下分图，共用误差纵轴范围；四种 Start/Stop 组合可分别显示。误差为实测时间减参考时间，限值取自当前日志段。
+- **联动趋势和明细**：点击测量点或输入 Pin 后离开输入框，更新该 Pin 的明细及参考时间趋势。趋势支持单 Pin，或当前 Pin 范围的均值与 Min–Max 竖线；两种统计均保留 TMU0/1 区别。明细包含实测、误差、限值、源日志结果和原始行号。
+- **路径校准补偿**：分别展示 TMU0/1 的 VOL/VOH PinDiff，不套用路径验证的误差限值。
+- **时基验证 EC**：按参考频率切换，EC 单位 ppm，明细中的实测频率单位 Hz；保留源日志 Pass/Fail。参考频率和 EC 限值由当前验证段上下文取得。
+
+TMU 专用视图使用自己的 Pin、路径和参考值筛选；侧栏 Test item / Channel 不限制它。文件、Run Batch、外层 Loop 及 TMU 内层 `Loop Count` 验证段保持隔离。同一段重复的 Pin/TMU/路径/参考值组合排除，并在摘要中提示；缺失点不补零。空 `VerifyResult` 保持 Unknown，数值超限与日志显式结果分开。
+
+缓存解析版本为 18。旧缓存文件重新导入时会自动重解析，原始日志不变。
+
 ## 目录
 
 1. [简介](#简介)
@@ -44,7 +57,7 @@ SST Log Analyser 是一款用于解析和可视化半导体测试日志文件的
 
 ### 安装（推荐）
 
-1. 从 GitHub Releases 下载 `SSTLogAnalyser-v1.2.8-win-x64.msi` 和对应的 `.sha256` 文件。
+1. 从 GitHub Releases 下载 `SSTLogAnalyser-v1.2.9-win-x64.msi` 和对应的 `.sha256` 文件。
 2. 双击 MSI，在 **Destination Folder** 页面保留默认目录或点击 **Browse** 选择其他安装路径，然后完成安装。
 3. 从桌面快捷方式或开始菜单启动 **SST Log Analyser**。
 
@@ -793,6 +806,10 @@ CREATE TABLE system_info (
 
 ## 版本历史
 
+### v1.2.9 (2026-10-30)
+
+新增 TMU 路径验证误差、路径补偿和时基 EC 视图，支持参考值切换、32 Pin 范围、路径开关、点击 Pin 联动趋势及源行明细。文件、批次和内外层 Loop 保持隔离，界面沿用现有英文风格。完整范围见 RELEASE_NOTES_v1.2.9.md。
+
 ### v1.2.8 (2026-10-30)
 
 新增 AC 总览、Pin/Group 相对时序柱状图与散点图、跨 Point 热图和趋势；明细表移到 Data 页。支持 64/128 Pin 分组、78 ps 最小刻度，修复 AC 限值边界误报，并隔离独立扫描。完整范围见 RELEASE_NOTES_v1.2.8.md。
@@ -885,6 +902,6 @@ CREATE TABLE system_info (
 
 ---
 
-**文档版本：** 1.2.6
-**最后更新：** 2026-09-30
+**文档版本：** 1.2.9
+**最后更新：** 2026-10-30
 **作者：** SST Log Analyser Team
