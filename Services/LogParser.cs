@@ -15,7 +15,8 @@ public class LogParser
     private static readonly Regex MvpiCurrentSectionRegex = new(@"^---MVPI Channel\s+(\d+):\s*Begin to \d+(?:st|nd|rd|th) Test for (FIMI|FI|MI)_(15|42)V,\s*(?:FIMI|Force Current|Measure Current) Verification$", RegexOptions.Compiled);
     private static readonly Regex MvpiCurrentItemRegex = new(@"^I,\s*([^,]+),\s*(?:V,\s*42,\s*)?(?:Force|Measure) Current$", RegexOptions.Compiled);
     private static readonly Regex HvpiCurrentRangeRegex = new(@"^-+IRange:(HVPI_IR_\w+)-+$", RegexOptions.Compiled);
-    private static readonly Regex FailedSuffixRegex = new(@"(?:,\s*|\s+)Failed\s*,?\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex FailedSuffixRegex = new(@"(?:,\s*|\s+)Fail(?:ed)?\s*,?\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly string[] HdmVerificationColumns = { "HVIChannel", "TargetValue", "HDM_Value", "ActualValue", "LowerLimit", "HighLimit", "Difference", "Result" };
     private static readonly string[] HvpiCmColumns = { "FV_Value", "MI_CM", "MI_ADC", "MV_ADC", "Low Limit", "High Limit", "CM_Difference" };
     private static readonly Regex CalibrationHeaderRegex = new(@"^(\w+)\s+Channel\s+(\d+):\s*(.+?)\s+Calibration\s*$", RegexOptions.Compiled);
     private static readonly Regex CoefficientRegex = new(@"^(\w+)\s+(.+?)\s+Gain:\s*([\d.\-Ee+]+),\s*Offset:\s*([\d.\-Ee+]+)", RegexOptions.Compiled);
@@ -69,11 +70,13 @@ public class LogParser
         string currentTimestamp = string.Empty;
         string currentLevel = "INFO";
         var processParser = new ProcessLogParser();
+        var auxiliaryParser = new AuxiliaryLogParser();
         bool inMixiBlock = false;
         string? mixiTestItem = null;
         int mixiChannel = 0;
         string? currentCalibrationItem = null;
         string? currentPpmuTestHeader = null;
+        string? currentPeTestHeader = null;
         string[]? acColumns = null;
         string[]? tmuColumns = null;
         double? tmuSpecLow = null, tmuSpecHigh = null, tmuReference = null;
@@ -155,7 +158,10 @@ public class LogParser
                     currentTimestamp, tmuReference, tmuSpecLow, tmuSpecHigh, result.TestResults))
                 continue;
             if (acColumns != null && !string.IsNullOrWhiteSpace(message) && !char.IsDigit(message[0])) acColumns = null;
-            if (tmuColumns != null && !string.IsNullOrWhiteSpace(message) && !char.IsDigit(message[0])) tmuColumns = null;
+            // Asynchronous TMU rows can arrive after the PASS banner / Finish log.
+            // Keep their table context through status text, until an actual new table or test begins.
+            if (tmuColumns != null && (message.StartsWith(',') ||
+                Regex.IsMatch(message, @"^(Re-test )?\w+(?: TMU)? Channel \d+:"))) tmuColumns = null;
 
             var loopMatch = LoopRegex.Match(message);
             if (loopMatch.Success)
@@ -168,6 +174,7 @@ public class LogParser
                     result.RunBatches[^1] = result.RunBatches[^1] with { EndLine = lineNumber - 1 };
                     result.RunBatches.Add(new RunBatch(result.RunBatches.Count + 1, lineNumber, int.MaxValue));
                     testSequences.Clear();
+                    auxiliaryParser.Reset();
                     inDataBlock = false;
                     columnNames = null;
                     pendingVerificationMode = string.Empty;
@@ -191,6 +198,7 @@ public class LogParser
             }
 
             // Some follow-up verification tables omit the module-prefixed header.
+            if (auxiliaryParser.Parse(message, currentTimestamp, lineNumber, currentLoop, result)) continue;
             var channelItemMatch = ChannelItemHeaderRegex.Match(message);
             if (channelItemMatch.Success && currentModule != ModuleType.Unknown)
             {
@@ -234,6 +242,7 @@ public class LogParser
                 string rangeInfo = verMatch.Groups[4].Value.Trim();
                 string testName = verMatch.Groups[5].Value.Trim();
                 currentModule = ParseModuleType(moduleStr);
+                currentPeTestHeader = null;
                 hvpiCmCurrentRange = null;
                 currentTestHeader = FormatTestItemName(rangeInfo, testName);
                 if (currentTestHeader.EndsWith(", CM", StringComparison.Ordinal))
@@ -334,7 +343,10 @@ public class LogParser
                 {
                     LoopIndex = currentLoop, ModuleType = module,
                     ChannelId = int.Parse(channelCoefficientMatch.Groups[2].Value),
-                    CalibrationItem = module == ModuleType.HDM ? "HDM Calibration" : "HVPI TMU Calibration",
+                    CalibrationItem = module == ModuleType.HDM
+                        ? currentModule == ModuleType.HDM && currentChannel == int.Parse(channelCoefficientMatch.Groups[2].Value) && currentCalibrationItem != null
+                            ? currentCalibrationItem : "HDM Calibration"
+                        : "HVPI TMU Calibration",
                     CoefficientName = module == ModuleType.HDM ? "HDM" : "TMU",
                     Gain = ParseDouble(channelCoefficientMatch.Groups[3].Value),
                     Offset = ParseDouble(channelCoefficientMatch.Groups[4].Value),
@@ -380,6 +392,7 @@ public class LogParser
                 isReTest = peMatch.Groups[1].Success && peMatch.Groups[1].Value.Trim().Length > 0;
                 currentModule = ModuleType.PE;
                 currentTestHeader = peMatch.Groups[2].Value.Trim();
+                currentPeTestHeader = currentTestHeader;
                 currentPpmuTestHeader = null;
                 columnNames = null;
                 inDataBlock = true;
@@ -482,6 +495,8 @@ public class LogParser
 
             // MICM uses its own seven-column table and omits the leading comma on data rows.
             if (inDataBlock && message.StartsWith(",") && (message.Contains("Expect", StringComparison.OrdinalIgnoreCase)
+                || (currentModule == ModuleType.PE && ParseCsvFields(message).SequenceEqual(new[] { "Pin (FV)", "HV_VALUE", "Measure", "LowLimit", "UpLimit", "Difference" }))
+                || (currentModule == ModuleType.HDM && ParseCsvFields(message).SequenceEqual(HdmVerificationColumns))
                 || (isHvpiCm && ParseCsvFields(message).SequenceEqual(HvpiCmColumns))))
             {
                 var newCols = ParseCsvFields(message);
@@ -495,6 +510,8 @@ public class LogParser
                         ? cm.Item : "CM (ExpectV / MeasureI)";
                 if (currentModule == ModuleType.PPMU && currentPpmuTestHeader != null)
                     currentTestHeader = FormatPpmuTestItem(currentPpmuTestHeader, newCols.FirstOrDefault());
+                if (currentModule == ModuleType.PE && currentPeTestHeader != null && newCols[0].StartsWith("Pin (", StringComparison.Ordinal))
+                    currentTestHeader = FormatPpmuTestItem(currentPeTestHeader, newCols[0]);
                 if (currentTestHeader != null
                     && currentTestHeader.Contains("Force Voltage", StringComparison.OrdinalIgnoreCase)
                     && !newCols.Any(c => c.Equals("ADCDifference", StringComparison.OrdinalIgnoreCase))
@@ -741,6 +758,29 @@ public class LogParser
     {
         try
         {
+            if (moduleType == ModuleType.HDM && columnNames.SequenceEqual(HdmVerificationColumns))
+            {
+                var cells = ParseCsvFields(line);
+                if (cells.Length != 8 || !int.TryParse(cells[0], out var hdmChannel)) return null;
+                var status = cells[7];
+                if (status is not ("Pass" or "Failed")) return null;
+                var target = RequiredNumber(cells[1]);
+                var hdm = RequiredNumber(cells[2]);
+                var dmm = RequiredNumber(cells[3]);
+                var low = RequiredNumber(cells[4]);
+                var high = RequiredNumber(cells[5]);
+                var error = RequiredNumber(cells[6]); // Source uses DMM - HDM, not HDM - target.
+                return new TestResult
+                {
+                    LoopIndex = loopIndex, ModuleType = ModuleType.HDM, SlotNumber = -1,
+                    ChannelId = hdmChannel, TestItemName = testItemName,
+                    ExpectValue = target, MeasureValue = dmm, AdcMeasureValue = hdm,
+                    LowLimit = low, UpLimit = high, Difference = error,
+                    IsFailed = status == "Failed" || error < low || error > high,
+                    HasExplicitResult = true, IsReTest = isReTest,
+                    LineNumber = lineNumber, Timestamp = timestamp
+                };
+            }
             // Strip trailing comma to avoid phantom empty field in split
             bool hasExplicitFailure = FailedSuffixRegex.IsMatch(line);
             var trimmedLine = FailedSuffixRegex.Replace(line, string.Empty).Trim().TrimStart(',');

@@ -1,0 +1,16 @@
+2026-09-30 10:00:00,000  INFO  - Index 1 of 1
+2026-09-30 10:00:00,000  INFO  - PE HV Calibration
+2026-09-30 10:00:00,000  INFO  - ,  Pin (FV),                 HV_VALUE,                  Measure,  LowLimit,   UpLimit,               Difference
+2026-09-30 10:00:00,000  INFO  - ,         0,                        7,         7.24869610901085,    -0.025,     0.025,        0.248696109010853
+2026-09-30 10:00:00,000  INFO  - ,         0,                       12,         12.3981927534493,    -0.025,     0.025,        0.398192753449282
+2026-09-30 10:00:00,000  INFO  - PE Pin: 0 PE HV Calibration Force V Gain: 63632, Offset: 32928
+2026-09-30 10:00:00,000  INFO  - PE VIHH Calibration
+2026-09-30 10:00:00,000  INFO  - ,      Pin ,                   Expect,                  Measure,  LowLimit,   UpLimit,               Difference
+2026-09-30 10:00:00,000  INFO  - ,         0,                        2,         2.15140722185829,    -0.025,     0.025,        0.151407221858288
+2026-09-30 10:00:00,000  INFO  - ,         0,                        4,         4.24035322418839,    -0.025,     0.025,        0.240353224188389
+2026-09-30 10:00:00,000  INFO  - PE Pin: 0 PE VIHH Calibration Force V Gain: 62745, Offset: 33074
+2026-09-30 10:00:00,000  INFO  - PE VILH Calibration
+2026-09-30 10:00:00,000  INFO  - ,      Pin ,                   Expect,                  Measure,  LowLimit,   UpLimit,               Difference
+2026-09-30 10:00:00,000  INFO  - ,         0,                        2,         2.19654269543268,    -0.025,     0.025,        0.196542695432676
+2026-09-30 10:00:00,000  INFO  - ,         0,                        4,         4.29526275277976,    -0.025,     0.025,        0.295262752779765
+2026-09-30 10:00:00,000  INFO  - PE Pin: 0 PE VILH Calibration Force V Gain: 62452, Offset: 32928

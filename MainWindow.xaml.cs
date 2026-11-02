@@ -5,6 +5,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using LiveChartsCore.Drawing;
+using LiveChartsCore.SkiaSharpView.WPF;
 using Microsoft.Win32;
 using SSTLogAnalyser.ViewModels;
 
@@ -25,6 +27,13 @@ public partial class MainWindow : Window
         MainTabControl.Items.Remove(DiagnosticsTab);
         MainTabControl.Items.Insert(1, DiagnosticsTab);
         _vm = new MainViewModel();
+        _vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(MainViewModel.Series) or nameof(MainViewModel.IsExpectedMeasuredMode))
+                ClearLinkedChartCursor();
+            if (e.PropertyName == nameof(MainViewModel.TooltipVisible) && !_vm.TooltipVisible)
+                TooltipPanel.Visibility = Visibility.Collapsed;
+        };
         _vm.RunSummaries.CollectionChanged += (_, _) =>
         {
             if (_vm.RunSummaries.Count > 0) MainTabControl.SelectedItem = RunSummaryTab;
@@ -248,16 +257,11 @@ public partial class MainWindow : Window
         {
             if (e.LeftButton == MouseButtonState.Pressed || e.RightButton == MouseButtonState.Pressed)
             {
+                ClearLinkedChartCursor();
                 TooltipPanel.Visibility = Visibility.Collapsed;
                 _vm.TooltipVisible = false;
                 return;
             }
-
-            var now = Stopwatch.GetTimestamp();
-            if (_lastTooltipUpdateTimestamp != 0 &&
-                Stopwatch.GetElapsedTime(_lastTooltipUpdateTimestamp, now) < TimeSpan.FromMilliseconds(40))
-                return;
-            _lastTooltipUpdateTimestamp = now;
 
             if (_vm.CurrentChartData.Count == 0)
             {
@@ -265,14 +269,27 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (!TryGetChartPointerData(e, out var pos, out var dataX, out var dataY, out var xScale, out var yScale))
+            var chart = (CartesianChart)sender;
+            if (!TryGetChartPointerData(chart, e, out var pos, out var dataX, out var dataY, out var xScale, out var yScale))
             {
+                ClearLinkedChartCursor();
                 TooltipPanel.Visibility = Visibility.Collapsed;
                 _vm.TooltipVisible = false;
                 return;
             }
 
-            var nearest = _vm.FindNearestChartPoint(dataX, dataY, xScale, yScale, out var nearestDist);
+            // Cursor transforms are independent of chart redraws and tooltip throttling.
+            if (_vm.IsExpectedMeasuredMode)
+            {
+                PositionChartCursor(MainChart, MainChartCursor, dataX);
+                PositionChartCursor(LinkedErrorChart, LinkedErrorChartCursor, dataX);
+            }
+            var now = Stopwatch.GetTimestamp();
+            if (_lastTooltipUpdateTimestamp != 0 &&
+                Stopwatch.GetElapsedTime(_lastTooltipUpdateTimestamp, now) < TimeSpan.FromMilliseconds(40))
+                return;
+            _lastTooltipUpdateTimestamp = now;
+            var nearest = _vm.FindNearestChartPoint(dataX, dataY, xScale, yScale, out var nearestDist, chart == LinkedErrorChart);
 
             if (nearest == null || nearestDist > 25)
             {
@@ -284,7 +301,11 @@ public partial class MainWindow : Window
             var failTag = nearest.IsFailed ? " [FAIL]" : "";
             _vm.TooltipTitle = nearest.SeriesName + failTag;
             _vm.TooltipExpect = "Expected: " + nearest.ExpectValue.ToString("G6");
-            _vm.TooltipDiff = nearest.DiffValue.HasValue
+            _vm.TooltipDiff = _vm.IsExpectedMeasuredMode
+                ? "Measured: " + nearest.MeasureValue.ToString("G6") +
+                  (nearest.AdcMeasureValue.HasValue ? (_vm.SelectedModule == "HDM" ? "\nHDM: " : "\nADC: ") + nearest.AdcMeasureValue.Value.ToString("G6") : "") +
+                  "\nDifference (LOG): " + nearest.Difference.ToString("G6")
+                : nearest.DiffValue.HasValue
                 ? "Measured: " + nearest.MeasureValue.ToString("G6") + "\nMeas-Target: " + nearest.DiffValue.Value.ToString("G6")
                 : "Difference: " + nearest.Difference.ToString("G6");
             _vm.TooltipExtra = (nearest.WaveValue.HasValue && nearest.OffsetValue.HasValue)
@@ -293,11 +314,12 @@ public partial class MainWindow : Window
             _vm.TooltipVisible = true;
 
             // Position tooltip near cursor using Margin
-            double ttX = pos.X + 16;
-            double ttY = pos.Y - 12;
-            var w = MainChart.ActualWidth;
-            if (ttX + 180 > w) ttX = pos.X - 180;
-            if (ttY < 0) ttY = pos.Y + 16;
+            var tooltipPosition = e.GetPosition(GeneralChartPlotArea);
+            double ttX = tooltipPosition.X + 16;
+            double ttY = tooltipPosition.Y - 12;
+            var w = GeneralChartPlotArea.ActualWidth;
+            if (ttX + 180 > w) ttX = tooltipPosition.X - 180;
+            if (ttY < 0) ttY = tooltipPosition.Y + 16;
             TooltipPanel.Margin = new Thickness(ttX, ttY, 0, 0);
             TooltipPanel.Visibility = Visibility.Visible;
         }
@@ -312,10 +334,41 @@ public partial class MainWindow : Window
         _chartLeftButtonDownPosition = null;
         TooltipPanel.Visibility = Visibility.Collapsed;
         _vm.TooltipVisible = false;
+        ClearLinkedChartCursor();
     }
 
     private void MainChart_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>
-        _chartLeftButtonDownPosition = e.GetPosition(MainChart);
+        _chartLeftButtonDownPosition = e.GetPosition((CartesianChart)sender);
+
+    private void ClearLinkedChartCursor()
+    {
+        MainChartCursor.Visibility = Visibility.Collapsed;
+        LinkedErrorChartCursor.Visibility = Visibility.Collapsed;
+    }
+
+    private void Chart_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        ClearLinkedChartCursor();
+        TooltipPanel.Visibility = Visibility.Collapsed;
+        _vm.TooltipVisible = false;
+    }
+
+    private static void PositionChartCursor(CartesianChart chart, System.Windows.Shapes.Line cursor, double x)
+    {
+        var location = chart.CoreChart.DrawMarginLocation;
+        var size = chart.CoreChart.DrawMarginSize;
+        var pixel = chart.ScaleDataToPixels(new LvcPointD(x, 0));
+        if (!double.IsFinite(pixel.X) || size.Width <= 0 || size.Height <= 0 ||
+            pixel.X < location.X || pixel.X > location.X + size.Width)
+        {
+            cursor.Visibility = Visibility.Collapsed;
+            return;
+        }
+        cursor.Y1 = location.Y;
+        cursor.Y2 = location.Y + size.Height;
+        ((TranslateTransform)cursor.RenderTransform).X = pixel.X;
+        cursor.Visibility = Visibility.Visible;
+    }
 
     private void MainChart_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
@@ -325,17 +378,18 @@ public partial class MainWindow : Window
             _chartLeftButtonDownPosition = null;
             if (!downPosition.HasValue) return;
 
-            var upPosition = e.GetPosition(MainChart);
+            var chart = (CartesianChart)sender;
+            var upPosition = e.GetPosition(chart);
             if (Math.Abs(upPosition.X - downPosition.Value.X) >= SystemParameters.MinimumHorizontalDragDistance ||
                 Math.Abs(upPosition.Y - downPosition.Value.Y) >= SystemParameters.MinimumVerticalDragDistance)
                 return;
 
             if (_vm.CurrentChartData.Count == 0) return;
 
-            if (!TryGetChartPointerData(e, out _, out var dataX, out var dataY, out var xScale, out var yScale))
+            if (!TryGetChartPointerData(chart, e, out _, out var dataX, out var dataY, out var xScale, out var yScale))
                 return;
 
-            var nearest = _vm.FindNearestChartPoint(dataX, dataY, xScale, yScale, out var nearestDist);
+            var nearest = _vm.FindNearestChartPoint(dataX, dataY, xScale, yScale, out var nearestDist, chart == LinkedErrorChart);
 
             if (nearest == null || nearestDist > 25 || nearest.RowIndex < 0)
                 return;
@@ -360,6 +414,7 @@ public partial class MainWindow : Window
     }
 
     private bool TryGetChartPointerData(
+        CartesianChart chart,
         MouseEventArgs e,
         out Point position,
         out double dataX,
@@ -367,17 +422,19 @@ public partial class MainWindow : Window
         out double xScale,
         out double yScale)
     {
-        position = e.GetPosition(MainChart);
+        position = e.GetPosition(chart);
         dataX = dataY = xScale = yScale = 0;
 
-        var width = MainChart.ActualWidth;
-        var height = MainChart.ActualHeight;
+        var width = chart.ActualWidth;
+        var height = chart.ActualHeight;
         if (width <= 0 || height <= 0 || _vm.CurrentChartData.Count == 0) return false;
 
-        const double plotLeft = 65;
-        const double plotTop = 10;
-        var plotRight = width - 20;
-        var plotBottom = height - 40;
+        var location = chart.CoreChart.DrawMarginLocation;
+        var size = chart.CoreChart.DrawMarginSize;
+        var plotLeft = location.X;
+        var plotTop = location.Y;
+        var plotRight = plotLeft + size.Width;
+        var plotBottom = plotTop + size.Height;
         var plotWidth = plotRight - plotLeft;
         var plotHeight = plotBottom - plotTop;
         if (plotWidth <= 0 || plotHeight <= 0) return false;
@@ -386,30 +443,15 @@ public partial class MainWindow : Window
             position.Y < plotTop || position.Y > plotBottom)
             return false;
 
-        if (!_vm.TryGetChartBounds(out var xMin, out var xMax, out var yMin, out var yMax))
-            return false;
-        var xPadding = (xMax - xMin) * 0.05;
-        var yPadding = (yMax - yMin) * 0.05;
-        if (xPadding == 0) xPadding = 0.5;
-        if (yPadding == 0) yPadding = 0.001;
-        xMin -= xPadding;
-        xMax += xPadding;
-        yMin -= yPadding;
-        yMax += yPadding;
-
-        var xAxis = _vm.XAxes.FirstOrDefault();
-        var yAxis = _vm.YAxes.FirstOrDefault();
-        xMin = xAxis?.MinLimit ?? xMin;
-        xMax = xAxis?.MaxLimit ?? xMax;
-        yMin = yAxis?.MinLimit ?? yMin;
-        yMax = yAxis?.MaxLimit ?? yMax;
-
-        var xRange = xMax - xMin;
-        var yRange = yMax - yMin;
+        var topLeft = chart.ScalePixelsToData(new LvcPointD(plotLeft, plotTop));
+        var bottomRight = chart.ScalePixelsToData(new LvcPointD(plotRight, plotBottom));
+        var pointer = chart.ScalePixelsToData(new LvcPointD(position.X, position.Y));
+        var xRange = bottomRight.X - topLeft.X;
+        var yRange = topLeft.Y - bottomRight.Y;
         if (xRange <= 0 || yRange <= 0) return false;
 
-        dataX = xMin + ((position.X - plotLeft) / plotWidth) * xRange;
-        dataY = yMax - ((position.Y - plotTop) / plotHeight) * yRange;
+        dataX = pointer.X;
+        dataY = pointer.Y;
         xScale = plotWidth / xRange;
         yScale = plotHeight / yRange;
         return true;

@@ -6,7 +6,7 @@ namespace SSTLogAnalyser.Services;
 
 public class CacheService : IDisposable
 {
-    private const int CurrentParserVersion = 18;
+    private const int CurrentParserVersion = 20;
     public int? SelectedBatch { get; set; }
     private readonly string _dbPath;
     private SqliteConnection _connection;

@@ -11,7 +11,7 @@
 
 TMU 专用视图使用自己的 Pin、路径和参考值筛选；侧栏 Test item / Channel 不限制它。文件、Run Batch、外层 Loop 及 TMU 内层 `Loop Count` 验证段保持隔离。同一段重复的 Pin/TMU/路径/参考值组合排除，并在摘要中提示；缺失点不补零。空 `VerifyResult` 保持 Unknown，数值超限与日志显式结果分开。
 
-缓存解析版本为 18。旧缓存文件重新导入时会自动重解析，原始日志不变。
+缓存解析版本为 20。旧缓存文件重新导入时会自动重解析，原始日志不变。
 
 ## 目录
 
@@ -57,7 +57,7 @@ SST Log Analyser 是一款用于解析和可视化半导体测试日志文件的
 
 ### 安装（推荐）
 
-1. 从 GitHub Releases 下载 `SSTLogAnalyser-v1.2.9-win-x64.msi` 和对应的 `.sha256` 文件。
+1. 从 GitHub Releases 下载 `SSTLogAnalyser-v1.2.10-win-x64.msi` 和对应的 `.sha256` 文件。
 2. 双击 MSI，在 **Destination Folder** 页面保留默认目录或点击 **Browse** 选择其他安装路径，然后完成安装。
 3. 从桌面快捷方式或开始菜单启动 **SST Log Analyser**。
 
@@ -271,7 +271,20 @@ HVPI MICM 验证按电压范围和电流量程显示独立 Item，例如 `MICM, 
 
 ## 图表查看
 
-Chart 标签页是核心可视化界面，展示校准数据的 Expected vs Difference 关系。
+MVPI 的 TMUVI QA/QB 电平验证在 MVPI 模块下选择 `TMUVI MVPI QA Level` / `TMUVI MVPI QB Level`，相反方向的扫描保持独立 Run。该格式的 Difference 是原 LOG 的“期望 − 实测”。PE HV 扫描的特殊 `HV_VALUE` 表显示为 PE / `HV, Force Voltage`；HVPI 的 `Fail` 与 `Failed` 后缀均保留失败判定。TMU 在 PASS/Finish 日志后异步写出的测量行仍归入原表。
+
+HDM、TMUVI、PE 和 CM 的校准过程数据在 Source Events 中以 `Calibration measurement` 查看，保留源行和原始数值；没有明确验证判定的校准记录显示 Unknown，不纳入验证通过率。
+
+HDM 验证表的 `TargetValue` 对应 Expected，`ActualValue` 为 DMM 实测，`HDM_Value` 为 HDM 读数（显示在 Data 的 ADC / HDM 列）。Error 保留源 LOG 的 `Difference = ActualValue − HDM_Value`；对比模式分别绘制 Measured（DMM）和 HDM。原测与 Re-test 分成独立 Run。旧版导入过的文件重新导入时会自动废弃旧解析缓存，无需手动删除数据库。
+
+Chart 标签页的通用曲线提供两个 **Chart mode**，默认选中 **Error**：
+
+- **Error**：横轴为 Expected，纵轴为 LOG 原始 Difference，保留 High/Low Limit 和失败点。
+- **Expected vs. Measured**：上图横轴为 Expected，纵轴为原始测量值。灰色虚线为 Expected，彩色实线为 Measured；有独立 ADC 读数时，另绘同色点线 ADC。悬停显示期望、实测、ADC（如有）和 LOG Difference，点击实测点仍可跳转 Data 原始行。误差及其限值显示在下图。
+
+Expected vs. Measured 使用上下联动布局：上图为期望/实测，下图为同一批点的 LOG Difference 和限值。鼠标在任一图上滚轮缩放或拖动时，两图横轴范围同步；纵轴可分别缩放，操作上图不会改变下图的误差纵轴，操作下图也不会改变上图的实测纵轴，便于局部放大细微误差。悬停竖线标出同一个横轴位置，两图均可点击实测点跳转 Data。Reset 同时恢复两图范围；PNG 导出包含上下图。
+
+两种模式沿用相同的文件、Batch、Channel、Loop 和重复 Run 筛选，切换时重置缩放。CM 的横轴为施加电压、纵轴为电流，没有同量纲的期望电流曲线，因此使用 Error。AC 概览与 TMU 专用面板保持各自的视图；AC 勾选 Show verification sweeps 后可使用通用曲线模式。
 
 点击图表右上角的保存图标可将当前画面导出为 PNG。导出内容会保留当前缩放范围、曲线聚焦状态、过滤结果、摘要以及当前可见的 Legend；操作按钮不会出现在图片中。默认文件名为 `TestItem - Module - CH - yyyyMMdd-HHmmss.png`，保存对话框允许修改文件名和目标目录。
 
@@ -806,6 +819,10 @@ CREATE TABLE system_info (
 
 ## 版本历史
 
+### v1.2.10 (2026-11-02)
+
+新增 Expected vs. Measured 上下联动图表及双图 PNG 导出；补齐 HDM、TMUVI、PE HV、HVPI 和 TMU 特殊日志解析与校准过程记录。缓存解析版本为 20。完整范围见 RELEASE_NOTES_v1.2.10.md。
+
 ### v1.2.9 (2026-10-30)
 
 新增 TMU 路径验证误差、路径补偿和时基 EC 视图，支持参考值切换、32 Pin 范围、路径开关、点击 Pin 联动趋势及源行明细。文件、批次和内外层 Loop 保持隔离，界面沿用现有英文风格。完整范围见 RELEASE_NOTES_v1.2.9.md。
@@ -902,6 +919,6 @@ CREATE TABLE system_info (
 
 ---
 
-**文档版本：** 1.2.9
-**最后更新：** 2026-10-30
+**文档版本：** 1.2.10
+**最后更新：** 2026-11-02
 **作者：** SST Log Analyser Team

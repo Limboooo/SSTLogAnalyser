@@ -1,5 +1,17 @@
 # 可重复验证用模拟 LOG
 
+2026-10-30 新参考 LOG 的表头清点和逐行覆盖结果见 [REFERENCE_LOG_AUDIT.md](REFERENCE_LOG_AUDIT.md)。`37_TMUVI_Real.log`、`38_TMU_Async_Tail.log`、`39_PE_HV_Real.log`、`41_PE_Calibration_Real.log` 是保留原数值、仅统一时间戳的真实摘录；源文件及原始行号映射见 `fixtures/REFERENCE_EXCERPTS.json`。`40_Special_Table_Edges.log` 是明确合成的 Fail/Failed、全角逗号、NaN 和后续模块隔离边界。
+
+TMUVI QA/QB 在 MVPI 模块下选择 `TMUVI MVPI QA Level` / `TMUVI MVPI QB Level`；两次相反方向扫描保留独立 Run。Difference 原样保留为源码的 `Expect_Level - Actual_Value`，不能套用其他模块的差值方向。PE HV 的 `HV_VALUE` 表显示在 PE / `HV, Force Voltage`。校准过程表进入 Source Events，状态 Unknown，不增加验证点和通过率。缓存解析版本已提升到 20。
+
+`42_HVPI_Cal_Header_Mismatch.log` 是真实 HVPI 电流校准摘录：五列表头实际输出六列数据，源码顺序为 Expect、DMM、ADC、LowLimit、UpLimit、Difference；两条记录在 Source Events 中保留全部五项实测/限值/差值，不产生验证通过判定。
+
+完整表格覆盖检查可运行：`dotnet run --project validation/Regression.csproj -c Release -- --reference-table-audit validation/audit/reference-table-inventory.json artifacts/reference-table-audit.md`。该检查核对测量表数值行是否进入测试点或 Source Events；不是对所有日志文本、二进制附件或硬件正确性的证明。
+
+`36_HDM_Real.log` 摘自 `E:\00_收件箱\HVPI Log ReCal fail\AdaptstarSystemServiceTool_20261030-105418-LogAll.txt`：保留 HDM 段原始行 7473–7615，并带入此前最后一条 `Index 1 of 1`，仅统一时间戳。111 个验证点、4 个失败点、31 个 Re-test 点、4 组不同 Channel/量程的校准系数；末尾 Ch804 Re-test 只记录了 10 点，不能补成完整扫描。校准过程数据不混入验证点。`HdmLogCheck` 独立回读每行的七列数值及 Pass/Failed，完整文件可运行 `dotnet run --project validation/Regression.csproj -c Release -- --hdm-log <完整LOG路径>`。导入回归另验证 HDM 模块筛选、重复 Run 隔离、DMM/HDM 对比曲线及缓存重载。
+
+完整真实 LOG 调试参考见 [samples/README.md](samples/README.md)：从 `E:\10_工作项目\SST\LOGSample` 选取 8 份模块/场景样例，保留原文并附来源和 SHA-256；与本目录的固定回归摘录分开维护。
+
 `35_TMU_Real.log` 为本次 `AdaptstarSystemServiceTool_20261021-163320-LogAll.txt` 的真实摘录，仅统一时间戳：保留 Pin0/9 的六种参考频率、两套 PinDiff，以及 160/2000 ns 下的八种 TMU/路径组合。它不是模拟测量值。
 
 运行 `dotnet run --project validation/Regression.csproj -c Release -- --tmu-log <完整LOG路径> [预览PNG路径]`，按该完整原始文件的固定预期核对 49,152 个路径值、−0.597/+0.655 ns 极值和 192 个时基 EC 点。每个路径值还独立回读原始行，核对 Pin、列位置、参考值和差值；导入检查包含 SQLite 重载、视图/参考值切换、32 Pin 范围、路径开关、缺失/重复键、文件/外层 Loop/内层 Loop 隔离。提供 PNG 路径时渲染实际 WPF TMU 面板并触发测量点点击联动。
@@ -136,3 +148,9 @@ powershell -NoProfile -File .\validation\Run-Regression.ps1 -Audit
 ```
 
 然后不带参数运行固定回归。源码清单、工作副本哈希和范围说明在 `audit` 目录。源码模板语料现仅验证容错，不验证原文缓存；详见项目根目录 `SOURCE_LOG_COVERAGE.md`。
+
+## v1.2.10 发布验证
+
+2026-11-02 固定回归通过 17,996 项断言。完整 69 份参考日志的测量表覆盖复查未发现验证表漏行。
+
+运行 `dotnet run --project validation/Regression.csproj -c Release -- --linked-chart-preview artifacts/linked-chart-preview` 可渲染生产 Chart 布局，检查 HDM、TMUVI 和 PE HV 的双图布局、X 坐标对齐、横轴同步/纵轴独立缩放及 Reset、Error 模式恢复，并调用生产 PNG 导出函数。使用临时缓存，不访问用户缓存；窗口鼠标事件由人工测试补充。

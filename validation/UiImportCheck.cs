@@ -31,6 +31,7 @@ static class UiImportCheck
                     Check(model.RunSummaries.Count == 2, "renamed summary files loaded into Run Summary");
                     Check(model.LoadedFiles.Count == 5, "all imported files registered");
                     Check(model.AvailableModules.Contains("PPMU"), "pure CAL module in filters");
+                    Check(model.SelectedChartMode == "Error" && !model.IsExpectedMeasuredMode, "chart defaults to Error");
                     model.SelectedModule = "MIXI";
                     model.SelectedTestItem = "AWG AWG_VER_HR_1K5_WAVE_DAC_OFFSET_DAC_POS";
                     model.SetDiagnosticsActive(true);
@@ -38,6 +39,7 @@ static class UiImportCheck
                     Check(model.WaveOffsetDetailMode && model.WaveOffsetSummary.Contains("WAVE CAL"), "Detail rendered for known WAVE bias");
                     model.SetSelectedChannels(new[] { 1, 2, 3 });
                     Check(model.WaveOffsetChannelMapMode && model.WaveOffsetSummary.Contains("Channel Map: 3 channels"), "Channel Map import and filters");
+                    CheckValueMode();
                     await model.LoadFilesFromPathsAsync(new[] { Path.Combine(fixtures, "06_MIXI_Attribution_LogAll.log") });
                     Check(model.LoadedFiles.Count == 5, "cached file not duplicated");
                     await model.LoadFilesFromPathsAsync(new[] { Path.Combine(fixtures, "21_DPS_Sweep_LogAll.log") });
@@ -52,6 +54,14 @@ static class UiImportCheck
                         Check(values.Length == 12 && values.Select(p => p.X).Distinct().Count() == 12, name + " has a drawable -3..8 sweep");
                         Check(values.All(p => Math.Abs(p.Y!.Value) >= 0.001), name + " carries nonzero error bounds");
                     }
+                    CheckValueMode();
+                    model.SetSelectedLoops(new[] { 2 });
+                    CheckValueMode(); // Includes failed points in the sweep.
+                    model.SetSelectedLoops(new[] { 1, 2 });
+                    model.PerformanceMode = true;
+                    CheckValueMode();
+                    model.PerformanceMode = false;
+                    model.SetSelectedLoops(new[] { 1 });
                     var sweepFile = model.LoadedFiles.Single(p => p.FileName == "21_DPS_Sweep_LogAll.log");
                     model.BaselineFile = sweepFile;
                     model.CurrentComparisonFile = sweepFile;
@@ -94,6 +104,7 @@ static class UiImportCheck
                     model.SelectedTestItem = "V, -25, 25, Measure Voltage";
                     Check(model.ChartTitle == "MXVI / V, -25, 25, Measure Voltage", "chart title updates when Item changes");
                     Check(model.ChartDataRows.Count == 1 && model.ChartDataRows[0].AdcMeasureValue.HasValue, "switching back to Measure Voltage preserves ADC-only data");
+                    CheckValueMode();
                     model.ClearAllCommand.Execute(null);
                     Check(model.ChartTitle.Length == 0 && model.ChartContext.Length == 0, "clearing data clears chart heading");
                     await model.LoadFilesFromPathsAsync(new[] { Path.Combine(fixtures, "25_MXVI_Repeated_Sweeps.log") });
@@ -107,6 +118,7 @@ static class UiImportCheck
                             .Where(p => p.Name?.Contains("Ch") == true).ToArray();
                         Check(curves.Length == (item == "Force Voltage" ? 8 : 4) && curves.All(p => p.Values!.Count() == 11 && p.Values!.Select(v => v.X).Distinct().Count() == 11),
                             "real sweep chart: " + item + " has distinct complete curves without interleaved X");
+                        CheckValueMode();
                     }
                     model.BaselineFile = model.LoadedFiles.Single();
                     model.CurrentComparisonFile = model.LoadedFiles.Single();
@@ -168,12 +180,90 @@ static class UiImportCheck
                             var curves = model.Series.OfType<LiveChartsCore.SkiaSharpView.LineSeries<LiveChartsCore.Defaults.ObservablePoint>>()
                                 .Where(p => p.Name?.StartsWith("Ch800") == true).ToArray();
                             Check(curves.Length == 1 && curves[0].Values!.Count() == 9, "MICM draws one nine-point curve per range");
+                            model.SelectedChartMode = "Expected vs. Measured";
+                            Check(!model.CanCompareExpectedMeasured && model.SelectedChartMode == "Error" &&
+                                model.Series.All(p => p.Name != "Expected"), "CM does not compare current with applied voltage");
                         }
                         var fileId = model.LoadedFiles.Single().FileId;
                         var hvpiRows = cache.QueryTestResults(new[] { fileId }, "HVPI", null, null, null);
                         Check(hvpiRows.Count == 256 && hvpiRows.Count(p => p.IsFailed) == 13 && hvpiRows.Count(p => p.HasExplicitResult) == 13,
                             "HVPI cache retains all MICM points and explicit failures");
                         model.ClearAllCommand.Execute(null);
+                    }
+                    void CheckValueMode()
+                    {
+                        var rows = model.ChartDataRows.ToArray();
+                        var oldError = model.CurrentChartData.Where(p => !p.IsLimit).Select(p => p.Difference).ToArray();
+                        model.SelectedChartMode = "Expected vs. Measured";
+                        Check(model.IsExpectedMeasuredMode && model.ChartDataRows.Select(p => (p.FileId, p.LineNumber, p.TestItemName))
+                            .SequenceEqual(rows.Select(p => (p.FileId, p.LineNumber, p.TestItemName))), "mode switch preserves source rows and filters");
+                        var lines = model.Series.OfType<LiveChartsCore.SkiaSharpView.LineSeries<LiveChartsCore.Defaults.ObservablePoint>>().ToArray();
+                        var expected = lines.Single(p => p.Name == "Expected");
+                        Check(expected.Values!.All(p => p.X == p.Y) && expected.Values!.Count() == rows.Select(p => p.ExpectValue).Distinct().Count(), "expected reference is y=x over selected targets");
+                        Check(expected.Values!.Count() != 1 || expected.GeometrySize > 0, "single-point expected reference remains visible");
+                        Check(lines.All(p => p.Name != "High Limit" && p.Name != "Low Limit"), "absolute mode does not draw error limits as absolute values");
+                        var errorLines = model.LinkedErrorSeries.OfType<LiveChartsCore.SkiaSharpView.LineSeries<LiveChartsCore.Defaults.ObservablePoint>>().ToArray();
+                        Check(errorLines.Any(p => p.Name == "High Limit") && errorLines.Any(p => p.Name == "Low Limit"), "linked error chart retains source limit curves");
+                        foreach (var row in rows)
+                            Check(errorLines.Where(p => p.Name != "High Limit" && p.Name != "Low Limit")
+                                .Any(p => p.Values!.Any(v => v.X == row.ExpectValue && v.Y == row.Difference)), "linked plot preserves source Difference");
+                        model.XAxes[0].MinLimit = 0.25; model.XAxes[0].MaxLimit = 0.75;
+                        Check(model.LinkedErrorXAxes[0].MinLimit == 0.25 && model.LinkedErrorXAxes[0].MaxLimit == 0.75, "upper zoom range propagates to lower chart");
+                        model.LinkedErrorXAxes[0].MinLimit = 0.4; model.LinkedErrorXAxes[0].MaxLimit = 0.6;
+                        Check(model.XAxes[0].MinLimit == 0.4 && model.XAxes[0].MaxLimit == 0.6, "lower zoom range propagates to upper chart");
+                        model.ResetChartZoomCommand.Execute(null);
+                        Check(model.XAxes[0].MinLimit == null && model.LinkedErrorXAxes[0].MaxLimit == null, "Reset clears both zoom ranges");
+                        foreach (var point in model.CurrentChartData.Where(p => !p.IsLimit))
+                        {
+                            var row = rows[point.RowIndex];
+                            var y = point.SeriesName.EndsWith(" / ADC") || point.SeriesName.EndsWith(" / HDM") ? row.AdcMeasureValue!.Value : row.MeasureValue;
+                            Check(point.ChartValue == y && point.Difference == row.Difference, "plot uses recorded measurement and retains LOG Difference");
+                            var line = lines.Single(p => p.Name == point.SeriesName);
+                            Check(line.Values!.Any(p => p.X == row.ExpectValue && p.Y == y), "measurement curve matches source row");
+                            var hit = model.FindNearestChartPoint(point.ExpectValue, y, 1000000, 1000000, out var distance);
+                            Check(hit != null && distance < 1e-8 && rows[hit.RowIndex].ExpectValue == row.ExpectValue, "absolute-mode hit test and Data row lookup use plotted Y");
+                        }
+                        Check(model.TryGetChartBounds(out _, out _, out var minY, out var maxY) &&
+                            minY <= rows.Min(p => Math.Min(p.ExpectValue, p.MeasureValue)) &&
+                            maxY >= rows.Max(p => Math.Max(p.ExpectValue, p.MeasureValue)), "chart bounds include expected and measured values");
+                        foreach (var scatter in model.Series.OfType<LiveChartsCore.SkiaSharpView.ScatterSeries<LiveChartsCore.Defaults.ObservablePoint>>())
+                            Check(scatter.Values!.All(p => rows.Any(r => r.IsFailed && r.ExpectValue == p.X && r.MeasureValue == p.Y)), "failure markers follow measured values");
+                        var focus = model.LegendItems.First(p => p.FocusKey != null);
+                        model.ToggleSeriesFocusCommand.Execute(focus);
+                        Check(expected.IsVisible, "expected reference remains visible when focusing a channel");
+                        var focusedPoint = model.CurrentChartData.First(p => !p.IsLimit && model.IsChartSeriesVisible(p.SeriesName));
+                        Check(model.FindNearestChartPoint(focusedPoint.ExpectValue, focusedPoint.ChartValue, 1000000, 1000000, out var focusedDistance) != null && focusedDistance < 1e-8,
+                            "measured-series focus preserves hit testing");
+                        model.ShowAllSeriesCommand.Execute(null);
+                        model.SelectedChartMode = "Error";
+                        Check(model.LinkedErrorSeries.Length == 0, "Error mode removes lower curves");
+                        Check(model.CurrentChartData.Where(p => !p.IsLimit).Select(p => p.Difference).SequenceEqual(oldError) &&
+                            model.CurrentChartData.Where(p => !p.IsLimit).All(p => p.ChartValue == p.Difference), "switching back restores original error curve");
+                    }
+                    model.ClearAllCommand.Execute(null);
+                    foreach (var reload in new[] { false, true })
+                    {
+                        await model.LoadFilesFromPathsAsync(new[] { Path.Combine(fixtures, "36_HDM_Real.log") });
+                        if (reload) Check(model.StatusText.StartsWith("Loaded from cache:"), "HDM survives cached reimport");
+                        Check(model.AvailableModules.Contains("HDM"), "HDM available in module filter");
+                        model.SelectedModule = "HDM";
+                        model.SetSelectedChannels(new[] { 800 }); model.SetSelectedLoops(new[] { 1 });
+                        model.SelectedTestItem = "V, 0.2V, Measure Voltage";
+                        Check(model.ChartDataRows.Count == 42 && model.ChartDataRows.Count(p => p.IsReTest) == 21 &&
+                            model.ChartDataRows.Select(p => p.TestSequence).Distinct().Count() == 2, "HDM keeps original and retest as separate runs");
+                        CheckValueMode();
+                        model.ClearAllCommand.Execute(null);
+                    }
+                    foreach (var fixture in new[] { "37_TMUVI_Real.log", "39_PE_HV_Real.log" })
+                    {
+                        model.ClearAllCommand.Execute(null);
+                        await model.LoadFilesFromPathsAsync(new[] { Path.Combine(fixtures, fixture) });
+                        model.SelectedModule = fixture.StartsWith("37") ? "MVPI" : "PE";
+                        model.SetSelectedChannels(new[] { fixture.StartsWith("37") ? 800 : 0 });
+                        model.SetSelectedLoops(new[] { 1 });
+                        model.SelectedTestItem = fixture.StartsWith("37") ? "TMUVI MVPI QA Level" : "HV, Force Voltage";
+                        Check(model.ChartDataRows.Count == (fixture.StartsWith("37") ? 84 : 78), "special table appears under the correct module/item");
+                        CheckValueMode();
                     }
                     var batchPath = batchLog ?? Path.Combine(fixtures, "27_MXVI_Run_Batches.log");
                     var source = await new LogParser().ParseAsync(batchPath);

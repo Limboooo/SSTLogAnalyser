@@ -285,18 +285,31 @@
                         </Grid.RowDefinitions>
                         <StackPanel Margin="12,6,12,4"
                                     Visibility="{Binding ChartTitle, Converter={StaticResource StringToVis}}">
+                            <WrapPanel Margin="0,0,0,6">
+                                <TextBlock Text="Chart mode" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <ComboBox Width="190" ItemsSource="{Binding ChartModes}"
+                                          SelectedItem="{Binding SelectedChartMode}" IsEnabled="{Binding CanCompareExpectedMeasured}"/>
+                            </WrapPanel>
+                            <TextBlock Text="{Binding ChartModeHelp}" Foreground="#666" TextWrapping="Wrap" Margin="0,0,0,6"
+                                       Visibility="{Binding ChartModeHelp, Converter={StaticResource StringToVis}}"/>
                             <TextBlock Text="{Binding ChartTitle}" FontSize="16" FontWeight="SemiBold"
                                        Foreground="#222" TextWrapping="Wrap"/>
                             <TextBlock Text="{Binding ChartContext}" FontSize="11" Foreground="#666"
                                        TextWrapping="Wrap" Margin="0,4,0,0"/>
                         </StackPanel>
-                        <Grid Grid.Row="1">
+                        <Grid Grid.Row="1" x:Name="GeneralChartPlotArea">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="3*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
                         <lvc:CartesianChart x:Name="MainChart"
+                            PreviewMouseWheel="Chart_PreviewMouseWheel"
                             PreviewMouseLeftButtonDown="MainChart_PreviewMouseLeftButtonDown"
                             PreviewMouseLeftButtonUp="MainChart_PreviewMouseLeftButtonUp"
                             Series="{Binding Series}"
                             XAxes="{Binding XAxes}"
                             YAxes="{Binding YAxes}"
+                            DrawMargin="{Binding LinkedChartMargin}"
                             AnimationsSpeed="{Binding ChartAnimationsSpeed}"
                             ZoomMode="Both"
                             ZoomingSpeed="0.15"
@@ -305,6 +318,29 @@
                             LegendPosition="Hidden"
                             MouseMove="MainChart_MouseMove"
                             MouseLeave="MainChart_MouseLeave"/>
+                        <Canvas IsHitTestVisible="False" ClipToBounds="True">
+                            <Line x:Name="MainChartCursor" Visibility="Collapsed" Stroke="#AA5A626C" StrokeThickness="1">
+                                <Line.RenderTransform><TranslateTransform/></Line.RenderTransform>
+                            </Line>
+                        </Canvas>
+                        <Grid Grid.Row="1" Height="220" Margin="0,8,0,0"
+                              Visibility="{Binding IsExpectedMeasuredMode, Converter={StaticResource BoolToVis}}">
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                            <TextBlock Text="Error · source Difference / limits · X zoom linked, Y zoom independent" Margin="72,0,8,2" Foreground="#666" FontSize="11"/>
+                            <lvc:CartesianChart Grid.Row="1" x:Name="LinkedErrorChart"
+                                PreviewMouseWheel="Chart_PreviewMouseWheel"
+                                Series="{Binding LinkedErrorSeries}" XAxes="{Binding LinkedErrorXAxes}" YAxes="{Binding LinkedErrorYAxes}"
+                                ZoomMode="Both" ZoomingSpeed="0.15"
+                                DrawMargin="{Binding LinkedChartMargin}"
+                                AnimationsSpeed="{Binding ChartAnimationsSpeed}" Background="White" TooltipPosition="Hidden" LegendPosition="Hidden"
+                                MouseMove="MainChart_MouseMove" MouseLeave="MainChart_MouseLeave"
+                                PreviewMouseLeftButtonDown="MainChart_PreviewMouseLeftButtonDown" PreviewMouseLeftButtonUp="MainChart_PreviewMouseLeftButtonUp"/>
+                            <Canvas Grid.Row="1" IsHitTestVisible="False" ClipToBounds="True">
+                                <Line x:Name="LinkedErrorChartCursor" Visibility="Collapsed" Stroke="#AA5A626C" StrokeThickness="1">
+                                    <Line.RenderTransform><TranslateTransform/></Line.RenderTransform>
+                                </Line>
+                            </Canvas>
+                        </Grid>
                         <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="72,8,0,0"
                                 Padding="6,3" MaxWidth="520" Panel.ZIndex="4"
                                 Background="#B0FFFFFF" BorderBrush="#DDD" BorderThickness="1" CornerRadius="3"
@@ -384,6 +420,7 @@
                             </Border>
                         </StackPanel>
                         <Border x:Name="TooltipPanel"
+                                Grid.RowSpan="2"
                                 CornerRadius="4" Padding="8,5"
                                 Background="#E0FFFFFF" BorderBrush="#999" BorderThickness="1"
                                 HorizontalAlignment="Left" VerticalAlignment="Top"
@@ -645,7 +682,7 @@
                             <DataGridTextColumn Header="Test Item" Binding="{Binding TestItemName}" Width="150"/>
                             <DataGridTextColumn Header="Expected" Binding="{Binding ExpectValue, StringFormat=G6}" Width="100"/>
                             <DataGridTextColumn Header="Measured" Binding="{Binding MeasureValue, StringFormat=G6}" Width="100"/>
-                            <DataGridTextColumn Header="ADC" Binding="{Binding AdcMeasureValue, StringFormat=G6}" Width="90"/>
+                            <DataGridTextColumn Header="ADC / HDM" Binding="{Binding AdcMeasureValue, StringFormat=G6}" Width="90"/>
                             <DataGridTextColumn Header="Difference" Binding="{Binding Difference, StringFormat=G6}" Width="100"/>
                             <DataGridTextColumn Header="Low Limit" Binding="{Binding LowLimit, StringFormat=G6}" Width="100"/>
                             <DataGridTextColumn Header="High Limit" Binding="{Binding UpLimit, StringFormat=G6}" Width="100"/>

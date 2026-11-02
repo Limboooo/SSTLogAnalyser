@@ -42,10 +42,14 @@
 
 当前 Release/Debug 的 AdaptstarSystemServiceToolLog4cpp.config.xml 使用 %date  %-5level - %message%newline；支持逗号/小数点毫秒、INFO/WARN/ERROR/FATAL/DEBUG/TRACE 及多行续行。
 
-运行 powershell -NoProfile -File .\validation\Run-Regression.ps1，验证结构化预期、缓存/旧版本失效及实际 MainViewModel 导入/筛选/MIXI/限值图表数据。当前缓存解析版本为 18，重新加载旧文件会重解析。
+运行 powershell -NoProfile -File .\validation\Run-Regression.ps1，验证结构化预期、缓存/旧版本失效及实际 MainViewModel 导入/筛选/MIXI/限值图表数据。当前缓存解析版本为 20，重新加载旧文件会重解析。
 
 删除通用字段服务后，真实 45.07 MiB LogAll 测得解析 2.908 秒、结构化缓存写入 1.351 秒；提取 186,408 个测试点和 299 个事件，数量与修改前一致。共享文件 SHA256 另耗时 4.274 秒；不含实际窗口绘制耗时。
 
 ## 尚未证明的范围
 
 尚未证明所有业务格式 100% 正确：外部 DLL 输出、运行时拼接的所有参数组合、条件编译分支、特殊机型路径仍需实机样本。HVI 等仅有规则而未纳入固定场景的格式也需补独立验证。跨阶段耗时配对和校准改善量不从日志缺失或未经核实的 M/C 公式推导。图表像素、PNG 导出和硬件行为未在自动导入测试中验证。
+
+## v1.2.10 参考日志复查（2026-11-02）
+
+补齐 HDM 特殊验证列、TMUVI QA/QB、PE HV_VALUE、HVPI Fail 后缀及电流校准漏标 ADC 列、TMU 异步尾行；校准过程记录进入 Source Events，保持 Unknown。69 份参考日志测量表重新检查，已清点的验证表漏行数为 0。范围和来源见 [参考表审计](validation/REFERENCE_LOG_AUDIT.md)。这不代表未知格式或全部硬件语义的覆盖。

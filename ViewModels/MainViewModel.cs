@@ -8,6 +8,7 @@ using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
+using LiveChartsCore.SkiaSharpView.Painting.Effects;
 using SkiaSharp;
 using SSTLogAnalyser.Models;
 using SSTLogAnalyser.Services;
@@ -48,6 +49,16 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _compareMultiLoop;
     [ObservableProperty] private bool _showLegend = true;
     [ObservableProperty] private bool _performanceMode;
+    public string[] ChartModes { get; } = { "Error", "Expected vs. Measured" };
+    [ObservableProperty] private string _selectedChartMode = "Error";
+    // CM sweeps apply voltage while measuring current; ExpectValue is not a current target.
+    public bool CanCompareExpectedMeasured => !(SelectedModule is "HVPI" or "MVPI" &&
+        (SelectedTestItem?.StartsWith("MICM,", StringComparison.Ordinal) == true ||
+         SelectedTestItem?.EndsWith(", CM", StringComparison.Ordinal) == true));
+    public bool IsExpectedMeasuredMode => SelectedChartMode == ChartModes[1] && CanCompareExpectedMeasured;
+    public string ChartModeHelp => !CanCompareExpectedMeasured
+        ? "CM uses applied voltage and measured current; the source does not provide a matching expected-current curve. Showing Error."
+        : IsExpectedMeasuredMode ? "Top: expected and measured. Bottom: source Difference and limits. X zoom is linked; each Y axis zooms independently. Reset restores both charts." : string.Empty;
     [ObservableProperty] private string _chartRenderSummary = string.Empty;
     [ObservableProperty] private string _chartTitle = string.Empty;
     [ObservableProperty] private string _chartContext = string.Empty;
@@ -177,7 +188,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ResetChartZoom()
     {
-        foreach (var axis in XAxes.Concat(YAxes))
+        foreach (var axis in XAxes.Concat(YAxes).Concat(LinkedErrorXAxes).Concat(LinkedErrorYAxes))
         {
             axis.MinLimit = null;
             axis.MaxLimit = null;
@@ -205,7 +216,7 @@ public partial class MainViewModel : ObservableObject
     {
         HasSeriesFocus = _focusedSeriesNames.Count > 0;
 
-        foreach (var series in Series)
+        foreach (var series in Series.Concat(LinkedErrorSeries))
         {
             var belongsToGroup = _seriesFocusKeys.TryGetValue(series, out var focusKey);
             series.IsVisible = !HasSeriesFocus || !belongsToGroup || _focusedSeriesNames.Contains(focusKey!);
@@ -222,7 +233,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     public bool IsChartSeriesVisible(string seriesName) =>
-        _focusedSeriesNames.Count == 0 || _focusedSeriesNames.Contains(seriesName);
+        _focusedSeriesNames.Count == 0 || _focusedSeriesNames.Contains(seriesName) || Series.Any(series => series.Name == seriesName && series.IsVisible);
 
     public void SetSelectedChannels(IEnumerable<int> channels)
     {
@@ -394,6 +405,7 @@ public partial class MainViewModel : ObservableObject
     partial void OnCompareMultiChannelChanged(bool value) { if (value) CompareMultiLoop = false; UpdateChart(); }
     partial void OnCompareMultiLoopChanged(bool value) { if (value) CompareMultiChannel = false; UpdateChart(); }
     partial void OnPerformanceModeChanged(bool value) { UpdateChart(); }
+    partial void OnSelectedChartModeChanged(string value) { UpdateChart(); }
 
     public void SetWaveOffsetViewMode(bool detail)
     {
@@ -520,12 +532,22 @@ public partial class MainViewModel : ObservableObject
 
     private void UpdateChart()
     {
+        if (!CanCompareExpectedMeasured && SelectedChartMode != ChartModes[0])
+        {
+            SelectedChartMode = ChartModes[0];
+            return;
+        }
+        OnPropertyChanged(nameof(CanCompareExpectedMeasured));
+        OnPropertyChanged(nameof(IsExpectedMeasuredMode));
+        OnPropertyChanged(nameof(ChartModeHelp));
+        TooltipVisible = false;
         XAxes = SelectedModule == "AC"
             ? new[] { CreateAcAxis("Target (ns)") }
             : new[] { new Axis { Name = "Expected Value", NameTextSize = 13, TextSize = 11 } };
         YAxes = SelectedModule == "AC"
-            ? new[] { CreateAcAxis("Error (ns)") }
-            : new[] { new Axis { Name = "Difference", NameTextSize = 13, TextSize = 11 } };
+            ? new[] { CreateAcAxis(IsExpectedMeasuredMode ? "Value (ns)" : "Error (ns)") }
+            : new[] { new Axis { Name = IsExpectedMeasuredMode ? "Measured / Expected Value" : "Difference", NameTextSize = 13, TextSize = 11 } };
+        InitializeLinkedAxes();
         ResetChartZoom();
         _focusedSeriesNames.Clear();
         HasSeriesFocus = false;
@@ -564,6 +586,7 @@ public partial class MainViewModel : ObservableObject
 
         LegendItems = Array.Empty<LegendItem>();
         CurrentChartData.Clear();
+        LinkedErrorData.Clear();
         var multiFile = LoadedFiles.Count > 1;
         var fileNameMap = LoadedFiles.ToDictionary(f => f.FileId, f => Path.GetFileNameWithoutExtension(f.FileName));
         var hasMultipleLoops = data.Select(r => r.LoopIndex).Distinct().Take(2).Count() > 1;
@@ -595,7 +618,24 @@ public partial class MainViewModel : ObservableObject
         ChartAnimationsSpeed = fast ? TimeSpan.Zero : TimeSpan.FromMilliseconds(250);
 
         var seriesList = new List<ISeries>();
+        var errorSeries = new List<ISeries>();
         var legendItems = new List<LegendItem>(groups.Count + 2);
+        if (IsExpectedMeasuredMode)
+        {
+            var expected = data.Select(p => p.ExpectValue).Distinct().Order().ToArray();
+            seriesList.Add(new LineSeries<ObservablePoint>
+            {
+                Name = "Expected",
+                Values = expected.Select(x => new ObservablePoint(x, x)).ToArray(),
+                Stroke = new SolidColorPaint(SKColors.DimGray) { StrokeThickness = 2, PathEffect = new DashEffect(new float[] { 6, 4 }) },
+                GeometrySize = expected.Length == 1 ? 7 : 0,
+                GeometryStroke = new SolidColorPaint(SKColors.DimGray),
+                GeometryFill = new SolidColorPaint(SKColors.White),
+                Fill = null, LineSmoothness = 0
+            });
+            legendItems.Add(new LegendItem { Name = "Expected (dashed)", ColorBrush = Brushes.DimGray });
+            CurrentChartData.AddRange(expected.Select(x => new TooltipDataPoint { SeriesName = "Expected", ExpectValue = x, DisplayValue = x, IsLimit = true }));
+        }
         for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
         {
             var group = groups[groupIndex];
@@ -607,9 +647,13 @@ public partial class MainViewModel : ObservableObject
                 Palette[groupIndex % Palette.Length],
                 drawLimits: groupIndex == 0,
                 fast: fast);
+            if (IsExpectedMeasuredMode)
+                AddGroupSeries(errorSeries, new List<LegendItem>(), group.Title, group.Points,
+                    Palette[groupIndex % Palette.Length], groupIndex == 0, fast, false, LinkedErrorData);
         }
 
         Series = seriesList.ToArray();
+        LinkedErrorSeries = errorSeries.ToArray();
         LegendItems = legendItems;
         RebuildChartLookup();
         ChartRenderSummary = automaticFast
@@ -623,6 +667,9 @@ public partial class MainViewModel : ObservableObject
         ChartTitle = string.Empty;
         ChartContext = string.Empty;
         Series = Array.Empty<ISeries>();
+        LinkedErrorSeries = Array.Empty<ISeries>();
+        LinkedErrorData.Clear();
+        _linkedErrorIndex.Clear();
         LegendItems = Array.Empty<LegendItem>();
         CurrentChartData.Clear();
         ChartDataRows = Array.Empty<TestResult>();
@@ -1280,15 +1327,20 @@ public partial class MainViewModel : ObservableObject
         List<TestResult> points,
         SKColor color,
         bool drawLimits,
-        bool fast)
+        bool fast,
+        bool? measuredModeOverride = null,
+        List<TooltipDataPoint>? tooltipData = null)
     {
         if (points.Count == 0) return;
         var ordered = points.OrderBy(r => r.ExpectValue).ToList();
+        var measuredMode = measuredModeOverride ?? IsExpectedMeasuredMode;
+        var chartData = tooltipData ?? CurrentChartData;
+        var measuredTitle = measuredMode ? title + " / Measured" : title;
 
         var lineSeries = new LineSeries<ObservablePoint>
         {
-            Name = title,
-            Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
+            Name = measuredTitle,
+            Values = ordered.Select(p => new ObservablePoint(p.ExpectValue, measuredMode ? p.MeasureValue : p.Difference)).ToArray(),
             Stroke = new SolidColorPaint(color) { StrokeThickness = fast ? 1.5f : 2f },
             GeometryStroke = fast ? null : new SolidColorPaint(color) { StrokeThickness = 2f },
             GeometrySize = fast ? 0f : 6f,
@@ -1299,19 +1351,21 @@ public partial class MainViewModel : ObservableObject
         _seriesFocusKeys[lineSeries] = title;
         legendItems.Add(new LegendItem
         {
-            Name = title,
+            Name = measuredTitle,
             FocusKey = title,
             ColorBrush = new SolidColorBrush(Color.FromRgb(color.Red, color.Green, color.Blue))
         });
 
         foreach (var point in ordered)
         {
-            CurrentChartData.Add(new TooltipDataPoint
+            chartData.Add(new TooltipDataPoint
             {
-                SeriesName = title,
+                SeriesName = measuredTitle,
                 ExpectValue = point.ExpectValue,
                 Difference = point.Difference,
                 MeasureValue = point.MeasureValue,
+                AdcMeasureValue = point.AdcMeasureValue,
+                DisplayValue = measuredMode ? point.MeasureValue : point.Difference,
                 IsFailed = point.IsFailed,
                 WaveValue = point.WaveValue,
                 OffsetValue = point.OffsetValue,
@@ -1320,7 +1374,34 @@ public partial class MainViewModel : ObservableObject
             });
         }
 
-        if (drawLimits) AddLimitSeries(seriesList, legendItems, ordered);
+        if (measuredMode && ordered.Any(p => p.AdcMeasureValue.HasValue && p.AdcMeasureValue.Value != p.MeasureValue))
+        {
+            var adcTitle = title + (ordered[0].ModuleType == ModuleType.HDM ? " / HDM" : " / ADC");
+            var adcPoints = ordered.Where(p => p.AdcMeasureValue.HasValue).ToArray();
+            var adcSeries = new LineSeries<ObservablePoint>
+            {
+                Name = adcTitle,
+                Values = ordered.Select(p => p.AdcMeasureValue.HasValue ? new ObservablePoint(p.ExpectValue, p.AdcMeasureValue.Value) : new ObservablePoint(p.ExpectValue, null)).ToArray(),
+                Stroke = new SolidColorPaint(color) { StrokeThickness = 1.5f, PathEffect = new DashEffect(new float[] { 2, 3 }) },
+                GeometryStroke = fast ? null : new SolidColorPaint(color),
+                GeometryFill = fast ? null : new SolidColorPaint(SKColors.White),
+                GeometrySize = fast ? 0 : 4, Fill = null, LineSmoothness = 0
+            };
+            seriesList.Add(adcSeries);
+            _seriesFocusKeys[adcSeries] = title;
+            legendItems.Add(new LegendItem { Name = adcTitle + " (dotted)", FocusKey = title, ColorBrush = new SolidColorBrush(Color.FromRgb(color.Red, color.Green, color.Blue)) });
+            foreach (var point in adcPoints)
+                chartData.Add(new TooltipDataPoint
+                {
+                    SeriesName = adcTitle, ExpectValue = point.ExpectValue, DisplayValue = point.AdcMeasureValue,
+                    MeasureValue = point.MeasureValue, AdcMeasureValue = point.AdcMeasureValue,
+                    Difference = point.Difference, IsFailed = point.IsFailed,
+                    WaveValue = point.WaveValue, OffsetValue = point.OffsetValue, DiffValue = point.DiffValue,
+                    RowIndex = _chartRowIndices.GetValueOrDefault(point, -1)
+                });
+        }
+
+        if (drawLimits && !measuredMode) AddLimitSeries(seriesList, legendItems, ordered, chartData);
 
         if (fast) return;
 
@@ -1330,7 +1411,7 @@ public partial class MainViewModel : ObservableObject
         var failSeries = new ScatterSeries<ObservablePoint>
         {
             Name = title + " (Failed)",
-            Values = failedPoints.Select(p => new ObservablePoint(p.ExpectValue, p.Difference)).ToArray(),
+            Values = failedPoints.Select(p => new ObservablePoint(p.ExpectValue, measuredMode ? p.MeasureValue : p.Difference)).ToArray(),
             Fill = new SolidColorPaint(SKColors.Red),
             GeometrySize = 12f
         };
@@ -1347,7 +1428,8 @@ public partial class MainViewModel : ObservableObject
     private void AddLimitSeries(
         List<ISeries> seriesList,
         List<LegendItem> legendItems,
-        IReadOnlyList<TestResult> points)
+        IReadOnlyList<TestResult> points,
+        List<TooltipDataPoint> chartData)
     {
         if (points.Count == 0) return;
         var ordered = points.OrderBy(point => point.ExpectValue).ToArray();
@@ -1393,14 +1475,14 @@ public partial class MainViewModel : ObservableObject
 
         foreach (var point in ordered)
         {
-            CurrentChartData.Add(new TooltipDataPoint
+            chartData.Add(new TooltipDataPoint
             {
                 SeriesName = "High Limit",
                 ExpectValue = point.ExpectValue,
                 Difference = isMixi ? point.UpLimit - point.ExpectValue : point.UpLimit,
                 IsLimit = true
             });
-            CurrentChartData.Add(new TooltipDataPoint
+            chartData.Add(new TooltipDataPoint
             {
                 SeriesName = "Low Limit",
                 ExpectValue = point.ExpectValue,
@@ -1412,6 +1494,9 @@ public partial class MainViewModel : ObservableObject
 
     private void RebuildChartLookup()
     {
+        _linkedErrorIndex.Clear();
+        foreach (var group in LinkedErrorData.Where(p => !p.IsLimit).GroupBy(p => p.SeriesName, StringComparer.Ordinal))
+            _linkedErrorIndex[group.Key] = group.OrderBy(p => p.ExpectValue).ToArray();
         _tooltipSeriesIndex.Clear();
         foreach (var group in CurrentChartData
                      .Where(point => !point.IsLimit)
@@ -1421,12 +1506,12 @@ public partial class MainViewModel : ObservableObject
         }
 
         var finite = CurrentChartData
-            .Where(point => double.IsFinite(point.ExpectValue) && double.IsFinite(point.Difference))
+            .Where(point => double.IsFinite(point.ExpectValue) && double.IsFinite(point.ChartValue))
             .ToArray();
         _chartDataBounds = finite.Length == 0
             ? null
             : (finite.Min(point => point.ExpectValue), finite.Max(point => point.ExpectValue),
-                finite.Min(point => point.Difference), finite.Max(point => point.Difference));
+                finite.Min(point => point.ChartValue), finite.Max(point => point.ChartValue));
     }
 
     public bool TryGetChartBounds(out double xMin, out double xMax, out double yMin, out double yMax)
@@ -1446,12 +1531,13 @@ public partial class MainViewModel : ObservableObject
         double dataY,
         double xScale,
         double yScale,
-        out double distance)
+        out double distance,
+        bool errorChart = false)
     {
         TooltipDataPoint? nearest = null;
         var nearestSquaredDistance = double.MaxValue;
 
-        foreach (var (seriesName, points) in _tooltipSeriesIndex)
+        foreach (var (seriesName, points) in errorChart ? _linkedErrorIndex : _tooltipSeriesIndex)
         {
             if (!IsChartSeriesVisible(seriesName) || points.Length == 0) continue;
 
@@ -1462,7 +1548,7 @@ public partial class MainViewModel : ObservableObject
             {
                 var point = points[pointIndex];
                 var dx = (point.ExpectValue - dataX) * xScale;
-                var dy = (point.Difference - dataY) * yScale;
+                var dy = (point.ChartValue - dataY) * yScale;
                 var squaredDistance = dx * dx + dy * dy;
                 if (squaredDistance >= nearestSquaredDistance) continue;
 
@@ -1595,6 +1681,9 @@ public sealed record RunFailedSlotRow(string Stage, string Slot, string Board, i
 
 public class TooltipDataPoint
 {
+    public double? DisplayValue { get; set; }
+    public double ChartValue => DisplayValue ?? Difference;
+    public double? AdcMeasureValue { get; set; }
     public string SeriesName { get; set; } = string.Empty;
     public double ExpectValue { get; set; }
     public double Difference { get; set; }

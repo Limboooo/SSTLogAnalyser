@@ -8,6 +8,11 @@ CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 var fixtureDirectory = Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), "validation/fixtures"))
     ? Path.Combine(Directory.GetCurrentDirectory(), "validation/fixtures")
     : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../fixtures"));
+if (args.Length == 2 && args[0] == "--linked-chart-preview")
+{
+    LinkedChartCheck.Run(fixtureDirectory, args[1]);
+    return;
+}
 if (args.Length >= 2 && args[0] == "--ac-log")
 {
     AcCheck.Run(args[1], true, args.Length > 2 ? args[2] : null);
@@ -48,6 +53,16 @@ void Check(bool ok, string description)
 void Near(double actual, double expected, string description) =>
     Check(Math.Abs(actual - expected) < 1e-9, $"{description}: expected {expected:G10}, got {actual:G10}");
 var parser = new LogParser();
+if (args.Length == 3 && args[0] == "--reference-table-audit")
+{
+    await ReferenceTableAudit.Run(args[1], args[2]);
+    return;
+}
+if (args.Length == 2 && args[0] == "--hdm-log")
+{
+    HdmLogCheck.Run(args[1], await parser.ParseAsync(args[1]));
+    return;
+}
 var parsed = new Dictionary<string, ParseResult>();
 foreach (var path in Directory.GetFiles(fixtureDirectory, "*.log").Order())
 {
@@ -60,6 +75,25 @@ foreach (var path in Directory.GetFiles(fixtureDirectory, "*.log").Order())
 Check(parsed.Count >= 12, "expanded LogAll fixtures loaded");
 checks += MvpiFimiCheck.Run(parsed["28"], new[] { 800 });
 checks += HvpiLogCheck.Run(Path.Combine(fixtureDirectory, "30_HVPI_Real.log"), parsed["30"]);
+checks += HdmLogCheck.Run(Path.Combine(fixtureDirectory, "36_HDM_Real.log"), parsed["36"]);
+checks += SpecialTableCheck.Run(fixtureDirectory, parsed["37"], parsed["38"]);
+Check(parsed["39"].TestResults.Count == 93 && parsed["39"].TestResults.Count(p => p.TestItemName == "HV, Force Voltage") == 78 &&
+    parsed["39"].TestResults.Count(p => p.TestItemName == "VIHH") == 15, "PE HV_VALUE sweep and subsequent VIHH table remain separate");
+Check(parsed["40"].TestResults.Count == 3 && parsed["40"].TestResults.Count(p => p.HasExplicitResult && p.IsFailed) == 2 &&
+    parsed["40"].TestResults.Last().ModuleType == ModuleType.DPS, "fullwidth comma, Fail and Failed retained; NaN rejected and next module isolated");
+Check(parsed["41"].TestResults.Count == 0 && parsed["41"].DiagnosticObservations.Count == 12 &&
+    parsed["41"].DiagnosticObservations.All(p => p.Status == "Unknown" && p.Module == "PE"),
+    "PE HV/VIHH/VILH calibration points are retained without affecting verification pass rates");
+Check(parsed["42"].TestResults.Count == 0 && parsed["42"].DiagnosticObservations.Count == 10 &&
+    parsed["42"].DiagnosticObservations.Count(p => p.Item.EndsWith(" / ADCMeasure")) == 2 &&
+    parsed["42"].DiagnosticObservations.Any(p => p.Item.EndsWith(" / ADCMeasure") && p.Value == -0.000899958713301297),
+    "HVPI five-label/six-column calibration preserves the omitted ADC column without shifting limits");
+var hdm = parsed["36"];
+Check(hdm.TestResults.Count == 111 && hdm.TestResults.Count(p => p.IsFailed) == 4 &&
+    hdm.TestResults.Count(p => p.IsReTest) == 31 && hdm.TestResults.All(p => p.ModuleType == ModuleType.HDM && p.LoopIndex == 1),
+    "HDM real excerpt preserves 111 points, 4 failures, 31 retest points and original Loop");
+Check(hdm.CalibrationCoefficients.Count == 4 && hdm.CalibrationCoefficients.Select(p => (p.ChannelId, p.CalibrationItem)).Distinct().Count() == 4,
+    "HDM coefficients retain distinct channel/range scopes");
 var cmEdges = parsed["31"].TestResults;
 Check(cmEdges.Count == 3, "MICM excludes calibration rows and invalid NaN errors");
 Check(cmEdges[0].TestItemName == "MICM, -40, 40 [HVPI_IR_1mA]" && cmEdges[0].IsFailed && cmEdges[0].HasExplicitResult &&

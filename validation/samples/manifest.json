@@ -1,0 +1,86 @@
+{
+  "sourceRoot": "E:\\10_工作项目\\SST\\LOGSample",
+  "copiedOn": "2026-10-30",
+  "samples": [
+    {
+      "file": "DIGI_DC_AK_VER_20261021-130758_LogAll.txt",
+      "module": "DIGI_DC",
+      "platform": "AK",
+      "scenario": "VER",
+      "description": "DIGI DC：DPS / PMU / PPMU",
+      "source": "AK\\AK_Digi\\DC_ver---AK\\AdaptstarSystemServiceTool_20261021-130758-LogAll.txt",
+      "bytes": 33672449,
+      "sha256": "0A5045CBFD9083EA7C06FFE5302C6AA4A486A05E12AFB1183EDACD5D04C64696"
+    },
+    {
+      "file": "AC_AK_VER_20261021-161411_LogAll.txt",
+      "module": "AC",
+      "platform": "AK",
+      "scenario": "VER",
+      "description": "AC 时序验证",
+      "source": "AK\\AK_Digi\\AC_ver---\\AdaptstarSystemServiceTool_20261021-161411-LogAll.txt",
+      "bytes": 3700758,
+      "sha256": "DBEBAD09EC87BF7B4BC2ED302C7606AD4C8B1E6256D2D67C20C411C29C6D10FF"
+    },
+    {
+      "file": "TMU_AK_CAL_VER_20261021-163320_LogAll.txt",
+      "module": "TMU",
+      "platform": "AK",
+      "scenario": "CAL_VER",
+      "description": "TMU 校准及验证；可用于 --tmu-log 固定预期检查",
+      "source": "AK\\AK_Digi\\Tmu---cal\\AdaptstarSystemServiceTool_20261021-163320-LogAll.txt",
+      "bytes": 1092005,
+      "sha256": "C765A7851ABD4B88B295CF91A1926EDEFC3F51F5E1764189ADFFEC3FA214EA71"
+    },
+    {
+      "file": "DPSI_Astar_VER_20261023-085455_LogAll.txt",
+      "module": "DPSI",
+      "platform": "Astar",
+      "scenario": "VER",
+      "description": "DPSI DC 验证",
+      "source": "Astar\\DPSI_LOG\\DPSI-55185-MLS2011C000215-DC-ver---10.23\\AdaptstarSystemServiceTool_20261023-085455-LogAll.txt",
+      "bytes": 1579521,
+      "sha256": "C86E697856EA61289A726368B48C73C52C589AE501FBE5D5C5B2BB7154BF0266"
+    },
+    {
+      "file": "MIXI_Astar_VER_20261027-164841_LogAll.txt",
+      "module": "MIXI",
+      "platform": "Astar",
+      "scenario": "VER",
+      "description": "MIX2 / MIXI，AWG 与 DTZ 验证",
+      "source": "Astar\\mix-2_log\\MIX2-55259-JLS2021C000113,55259-JLS2021C000150_DC_ver---20261027\\AdaptstarSystemServiceTool_20261027-164841-LogAll.txt",
+      "bytes": 624117,
+      "sha256": "363541052128BF83ECA213FDE64C3875AA26948D93829C93C430D64D4382AEED"
+    },
+    {
+      "file": "MVPI_Dstar_VER_20261023-092743_LogAll.txt",
+      "module": "MVPI",
+      "platform": "Dstar",
+      "scenario": "VER",
+      "description": "MVPI DC 验证",
+      "source": "Dstar\\MVPI_LOG\\MVPI_DC_ver----10.23\\AdaptstarSystemServiceTool_20261023-092743-LogAll.txt",
+      "bytes": 5885102,
+      "sha256": "36664FA11F42D396F0EE553C43631C023B5D4BD99BEA614B43815C551454E45E"
+    },
+    {
+      "file": "PE_HV_Dstar_VER_20261028-092157_LogAll.txt",
+      "module": "PE_HV",
+      "platform": "Dstar",
+      "scenario": "VER",
+      "description": "PE HV 验证",
+      "source": "Dstar\\DIGI-LOG\\PE_HV_ver---- 10.28\\AdaptstarSystemServiceTool_20261028-092157-LogAll.txt",
+      "bytes": 1361059,
+      "sha256": "B1B88FB9E61780EDE306AD56CEAA7CA01601E277EE0145DDD691856585319472"
+    },
+    {
+      "file": "DIAG_DK_DIAG_20261029-135242_LogAll.txt",
+      "module": "DIAG",
+      "platform": "DK",
+      "scenario": "DIAG",
+      "description": "DIGI DC / AC 诊断",
+      "source": "DK\\DIGI\\DC AC Diag\\AdaptstarSystemServiceTool_20261029-135242-LogAll.txt",
+      "bytes": 841519,
+      "sha256": "0DEFF3A3882C7AAD782ED76557B0F12343D52E98C43AA6549093F53E4481715A"
+    }
+  ]
+}
