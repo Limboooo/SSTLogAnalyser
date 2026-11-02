@@ -6,7 +6,7 @@ namespace SSTLogAnalyser.Services;
 
 public class CacheService : IDisposable
 {
-    private const int CurrentParserVersion = 20;
+    private const int CurrentParserVersion = 22;
     public int? SelectedBatch { get; set; }
     private readonly string _dbPath;
     private SqliteConnection _connection;
@@ -77,6 +77,18 @@ public class CacheService : IDisposable
             );
             CREATE INDEX IF NOT EXISTS idx_tr_lookup
                 ON test_results(file_id, module_type, channel_id, test_item_name, loop_index);
+            CREATE TABLE IF NOT EXISTS slot_boards (
+                file_id INTEGER NOT NULL,
+                slot_number INTEGER NOT NULL,
+                slot_info TEXT NOT NULL,
+                slot_type TEXT NOT NULL,
+                device_name TEXT NOT NULL,
+                revision TEXT NOT NULL,
+                serial_number TEXT NOT NULL,
+                cal_date TEXT NOT NULL,
+                line_number INTEGER NOT NULL,
+                FOREIGN KEY (file_id) REFERENCES log_files(file_id)
+            );
             CREATE TABLE IF NOT EXISTS device_info (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_id INTEGER NOT NULL,
@@ -196,7 +208,7 @@ public class CacheService : IDisposable
     private void DeleteCachedFile(long fileId)
     {
         using var transaction = _connection.BeginTransaction();
-        foreach (var table in new[] { "run_batches", "test_results", "device_info", "error_log", "system_info", "calibration_coefficients", "diagnostic_observations", "log_files" })
+        foreach (var table in new[] { "run_batches", "test_results", "device_info", "slot_boards", "error_log", "system_info", "calibration_coefficients", "diagnostic_observations", "log_files" })
         {
             using var cmd = _connection.CreateCommand();
             cmd.Transaction = transaction;
@@ -351,6 +363,48 @@ public class CacheService : IDisposable
             cmd.ExecuteNonQuery();
         }
         transaction.Commit();
+    }
+
+    public void InsertSlotBoards(long fileId, IEnumerable<SlotBoardInfo> boards)
+    {
+        using var transaction = _connection.BeginTransaction();
+        using var cmd = _connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = "INSERT INTO slot_boards VALUES (@fid, @slot, @slotInfo, @type, @device, @revision, @sn, @date, @line)";
+        foreach (var board in boards)
+        {
+            cmd.Parameters.Clear();
+            cmd.Parameters.AddWithValue("@fid", fileId);
+            cmd.Parameters.AddWithValue("@slot", board.SlotNumber);
+            cmd.Parameters.AddWithValue("@slotInfo", board.SlotInfo);
+            cmd.Parameters.AddWithValue("@type", board.SlotType);
+            cmd.Parameters.AddWithValue("@device", board.DeviceName);
+            cmd.Parameters.AddWithValue("@revision", board.Revision);
+            cmd.Parameters.AddWithValue("@sn", board.SerialNumber);
+            cmd.Parameters.AddWithValue("@date", board.CalDate);
+            cmd.Parameters.AddWithValue("@line", board.LineNumber);
+            cmd.ExecuteNonQuery();
+        }
+        transaction.Commit();
+    }
+
+    public List<SlotBoardInfo> GetSlotBoards(long[] fileIds)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT file_id, (SELECT file_name FROM log_files f WHERE f.file_id = b.file_id), " +
+            "slot_number, slot_type, device_name, revision, serial_number, cal_date, line_number, slot_info " +
+            "FROM slot_boards b WHERE " + BuildFileIdWhere(fileIds, false) + " ORDER BY file_id, slot_number, slot_type, line_number";
+        AddFileIdParams(cmd, fileIds);
+        var boards = new List<SlotBoardInfo>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            boards.Add(new SlotBoardInfo
+            {
+                FileId = reader.GetInt64(0), FileName = reader.GetString(1), SlotNumber = reader.GetInt32(2),
+                SlotType = reader.GetString(3), DeviceName = reader.GetString(4), Revision = reader.GetString(5),
+                SerialNumber = reader.GetString(6), CalDate = reader.GetString(7), LineNumber = reader.GetInt32(8), SlotInfo = reader.GetString(9)
+            });
+        return boards;
     }
 
     public void InsertErrors(long fileId, IEnumerable<ErrorLogEntry> errors)

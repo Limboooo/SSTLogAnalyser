@@ -844,8 +844,9 @@
                     </TabItem.Header>
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="2*"/>
+                            <RowDefinition Height="3*"/>
+                            <RowDefinition Height="2*"/>
                         </Grid.RowDefinitions>
                         <GroupBox Grid.Row="0" Header="System Information" Margin="4">
                             <DataGrid ItemsSource="{Binding SystemInfos}" AutoGenerateColumns="False" IsReadOnly="True" Margin="2">
@@ -855,7 +856,57 @@
                                 </DataGrid.Columns>
                             </DataGrid>
                         </GroupBox>
-                        <GroupBox Grid.Row="1" Header="Device Mapping" Margin="4">
+                        <GroupBox Grid.Row="1" Header="Slot Board Configuration (as recorded in LOG)" Margin="4">
+                            <DockPanel>
+                                <GroupBox DockPanel.Dock="Top" Header="Summary" Margin="2">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" MaxHeight="170">
+                                        <ItemsControl ItemsSource="{Binding SlotBoardSummaries}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="2,2,2,6">
+                                                        <TextBlock Text="{Binding FileName}" Foreground="Gray" Margin="2,0,2,3"/>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <StackPanel Width="110">
+                                                                <TextBlock Text="Slot number" Height="24" FontWeight="SemiBold"/>
+                                                                <TextBlock Text="Board type" Height="24" FontWeight="SemiBold"/>
+                                                            </StackPanel>
+                                                            <ItemsControl ItemsSource="{Binding Slots}">
+                                                                <ItemsControl.ItemsPanel>
+                                                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                                                </ItemsControl.ItemsPanel>
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <Border BorderBrush="#DDD" BorderThickness="1,0,0,0" Padding="8,0" MinWidth="80">
+                                                                            <StackPanel>
+                                                                                <TextBlock Text="{Binding SlotInfo}" Height="24" TextAlignment="Center"/>
+                                                                                <TextBlock Text="{Binding BoardTypes}" Height="24" TextAlignment="Center"/>
+                                                                            </StackPanel>
+                                                                        </Border>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </GroupBox>
+                            <DataGrid ItemsSource="{Binding SlotBoards}" AutoGenerateColumns="False" IsReadOnly="True" Margin="2">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Slot" Binding="{Binding SlotInfo}" Width="80"/>
+                                    <DataGridTextColumn Header="Type" Binding="{Binding SlotType}" Width="75"/>
+                                    <DataGridTextColumn Header="Device" Binding="{Binding DeviceName}" Width="90"/>
+                                    <DataGridTextColumn Header="Revision" Binding="{Binding Revision}" Width="175"/>
+                                    <DataGridTextColumn Header="SN" Binding="{Binding SerialNumber}" Width="195"/>
+                                    <DataGridTextColumn Header="CalDate" Binding="{Binding CalDate}" Width="155"/>
+                                    <DataGridTextColumn Header="Source LOG" Binding="{Binding FileName}" Width="*" MinWidth="120"/>
+                                    <DataGridTextColumn Header="Line" Binding="{Binding LineNumber}" Width="60"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                            </DockPanel>
+                        </GroupBox>
+                        <GroupBox Grid.Row="2" Header="Device Mapping" Margin="4">
                             <DataGrid ItemsSource="{Binding DeviceEntries}" AutoGenerateColumns="False" IsReadOnly="True" Margin="2">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Group" Binding="{Binding GroupNumber}" Width="60"/>

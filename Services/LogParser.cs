@@ -7,6 +7,7 @@ namespace SSTLogAnalyser.Services;
 
 public class LogParser
 {
+    private static readonly Regex SlotBoardRegex = new(@"^(?:(?<type>\w+)-)?Slot:\s*(?<slot>\d+)(?<suffix>\(\d+\))?\s+Device:\s*(?<device>.*?)\s+Revision:\s*(?<revision>.*?)(?:\s+SN:(?<sn>.*?))?(?:\s+CalDate:\s*(?<date>.*))?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex TimestampRegex = new(@"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[,.]\d{3})\s+(INFO|ERROR|FATAL|WARN|DEBUG|TRACE)\s+-\s*(.*)", RegexOptions.Compiled);
     private static readonly Regex LoopRegex = new(@"Index\s+(\d+)\s+of\s+(\d+)", RegexOptions.Compiled);
     private static readonly Regex ChannelItemHeaderRegex = new(@"^Channel:\s*(\d+)\s+ItemName:\s*(.+?)\s+Verification\s*$", RegexOptions.Compiled);
@@ -117,6 +118,22 @@ public class LogParser
             if (level is "ERROR" or "FATAL" && !string.IsNullOrWhiteSpace(message) && !message.Contains("**"))
                 result.Errors.Add(new ErrorLogEntry { LoopIndex = currentLoop, Timestamp = currentTimestamp,
                     Level = level, Message = message, LineNumber = lineNumber });
+
+            var boardMatch = SlotBoardRegex.Match(message);
+            if (boardMatch.Success && int.TryParse(boardMatch.Groups["slot"].Value, out var boardSlot))
+            {
+                result.SlotBoards.Add(new SlotBoardInfo
+                {
+                    FileName = result.FileInfo.FileName, SlotNumber = boardSlot,
+                    SlotInfo = boardMatch.Groups["slot"].Value + boardMatch.Groups["suffix"].Value,
+                    SlotType = boardMatch.Groups["type"].Success ? boardMatch.Groups["type"].Value.ToUpperInvariant() : "DIGI",
+                    DeviceName = boardMatch.Groups["device"].Value.Trim(),
+                    Revision = boardMatch.Groups["revision"].Value.Trim(),
+                    SerialNumber = boardMatch.Groups["sn"].Value.Trim(),
+                    CalDate = boardMatch.Groups["date"].Value.Trim(), LineNumber = lineNumber
+                });
+                continue;
+            }
 
             if (DiagnosticLogParser.TryParse(message, currentTimestamp, lineNumber, currentLoop, out var observation))
                 result.DiagnosticObservations.Add(observation);
@@ -575,6 +592,9 @@ public class LogParser
             ExtractSystemInfo(message, result);
         }
 
+        // Repeated initialization reports need one row per distinct configuration.
+        result.SlotBoards = result.SlotBoards.DistinctBy(b =>
+            (b.SlotInfo, b.SlotType, b.DeviceName, b.Revision, b.SerialNumber, b.CalDate)).ToList();
         result.FileInfo.LoopCount = maxLoop;
         result.FileInfo.ParseTime = DateTime.Now;
         progress?.Report(new ParseProgress(100, lineNumber, result.TestResults.Count));
@@ -973,6 +993,7 @@ public class ParseResult
     public LogFileInfo FileInfo { get; set; } = new();
     public List<TestResult> TestResults { get; set; } = new();
     public List<DeviceInfo> Devices { get; set; } = new();
+    public List<SlotBoardInfo> SlotBoards { get; set; } = new();
     public List<ErrorLogEntry> Errors { get; set; } = new();
     public List<SystemInfo> SystemInfos { get; set; } = new();
     public List<CalibrationCoefficient> CalibrationCoefficients { get; set; } = new();

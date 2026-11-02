@@ -1,0 +1,10 @@
+2026-09-30 10:00:00,000 INFO - Slot: 0 Device: SSI Revision: 0x21042714_26060505 SN: 55001-CKS2032C000217 CalDate: -
+2026-09-30 10:00:00,000 INFO - Slot: 0 Device: DSC0 Revision: 0x25030347
+2026-09-30 10:00:00,000 INFO - Mvpi-Slot: 8 Device: MVPI8_0 Revision: 0x25031601 SN: MVPI-001 CalDate: 20261019_13:13:05
+2026-09-30 10:00:00,000 INFO - Mvpi-Slot: 8 Device: MVPI8_0 Revision: 0x25031601 SN: MVPI-001 CalDate: 20261019_13:13:05
+2026-09-30 10:00:00,000 INFO - Hvpi-Slot: 10 Device: SSI Revision: 0x123 SN:  CalDate: -
+2026-09-30 10:00:00,000 INFO - Dpsi-Slot: 9 Device: DPSI9_0 Revision: 0x456 SN: - CalDate: -
+2026-09-30 10:00:00,000 INFO - Mixi-Slot: 16(15) Device: MIXI Revision: 0x789 SN: MIXI-001 CalDate: 20261019_13:13:05
+2026-09-30 10:00:00,000 INFO - Mxvi-Slot: 11 Device: MXVI Revision: 0xabc SN: MXVI-001 CalDate: -
+2026-09-30 10:00:00,000 INFO - Mvpi-Slot: 8 Device: MVPI8_0 Revision: 0x25031602 SN: MVPI-002 CalDate: -
+Group 1: Location 1(101)-> Slot 7: A1(101)

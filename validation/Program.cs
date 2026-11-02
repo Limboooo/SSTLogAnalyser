@@ -73,6 +73,27 @@ foreach (var path in Directory.GetFiles(fixtureDirectory, "*.log").Order())
     Console.WriteLine($"{Path.GetFileName(path)}: points={result.TestResults.Count}, failed={result.TestResults.Count(p => p.IsFailed)}, coefficients={result.CalibrationCoefficients.Count}, events={result.DiagnosticObservations.Count}");
 }
 Check(parsed.Count >= 12, "expanded LogAll fixtures loaded");
+var boards = parsed["43"].SlotBoards;
+Check(boards.Count == 8 && parsed["43"].Devices.Count == 1, "slot boards deduplicated without losing Location mapping or changed configurations");
+Check(boards[0].SlotNumber == 0 && boards[0].SlotType == "DIGI" && boards[0].SerialNumber == "55001-CKS2032C000217" &&
+    boards[0].Revision == "0x21042714_26060505" && boards[0].CalDate == "-", "digital board metadata extracted");
+Check(boards[1].Revision == "0x25030347" && boards[1].SerialNumber == "" && boards[1].CalDate == "", "revision-only board retained");
+Check(boards[2].SlotType == "MVPI" && boards[2].SlotNumber == 8 && boards[2].LineNumber == 3 &&
+    boards[2].CalDate == "20261019_13:13:05" && boards[3].SerialNumber == "", "special board prefixes, source line and empty SN retained");
+Check(boards[5].SlotInfo == "16(15)", "MIXI parenthesized slot mapping preserved");
+Check(boards.Select(b => b.SlotType).Distinct().Count() == 6, "DIGI, DPSI, MVPI, HVPI, MIXI and MXVI parsed");
+foreach (var sampleName in new[] { "MVPI_Dstar_VER_20261023-092743_LogAll.txt", "DIAG_DK_DIAG_20261029-135242_LogAll.txt", "MIXI_Astar_VER_20261027-164841_LogAll.txt" })
+{
+    var path = Path.Combine(fixtureDirectory, "../samples", sampleName);
+    if (!File.Exists(path)) continue;
+    var sourceLines = File.ReadAllLines(path);
+    var expectedBoards = sourceLines.Where(line => line.Contains("Slot:") && line.Contains(" Device:") && line.Contains(" Revision:"))
+        .Select(line => line[(line.IndexOf(" - ", StringComparison.Ordinal) + 3)..].Trim()).Distinct().Count();
+    var actualBoards = (await parser.ParseAsync(path)).SlotBoards;
+    Check(expectedBoards > 0 && actualBoards.Count == expectedBoards, sampleName + " all distinct board records extracted");
+    Check(actualBoards.All(b => sourceLines[b.LineNumber - 1].Contains("Device: " + b.DeviceName + " Revision: " + b.Revision)), sampleName + " board source lines verified");
+    Console.WriteLine($"{sampleName}: {actualBoards.Count} boards, {actualBoards.Select(b => b.SlotNumber).Distinct().Count()} slots");
+}
 checks += MvpiFimiCheck.Run(parsed["28"], new[] { 800 });
 checks += HvpiLogCheck.Run(Path.Combine(fixtureDirectory, "30_HVPI_Real.log"), parsed["30"]);
 checks += HdmLogCheck.Run(Path.Combine(fixtureDirectory, "36_HDM_Real.log"), parsed["36"]);
@@ -265,7 +286,16 @@ try
             cache.InsertTestResults(fileId, result.TestResults);
             cache.InsertCalibrationCoefficients(fileId, result.CalibrationCoefficients);
             cache.InsertDiagnosticObservations(fileId, result.DiagnosticObservations);
+            cache.InsertSlotBoards(fileId, result.SlotBoards);
             cache.MarkFileComplete(fileId);
+            var cachedBoards = cache.GetSlotBoards(new[] { fileId });
+            Check(cachedBoards.Count == result.SlotBoards.Count && cachedBoards.All(b => b.FileId == fileId && b.FileName == result.FileInfo.FileName), "board cache count and source file " + name);
+            foreach (var expected in result.SlotBoards)
+            {
+                var actual = cachedBoards.Single(b => b.LineNumber == expected.LineNumber);
+                Check((actual.SlotInfo, actual.SlotType, actual.DeviceName, actual.Revision, actual.SerialNumber, actual.CalDate) ==
+                    (expected.SlotInfo, expected.SlotType, expected.DeviceName, expected.Revision, expected.SerialNumber, expected.CalDate), "board cache metadata " + name);
+            }
             var rows = cache.QueryTestResults(new[] { fileId }, null, null, null, null);
             Check(rows.Count == result.TestResults.Count && rows.Count(p => p.IsFailed) == result.TestResults.Count(p => p.IsFailed), "cache count / failure roundtrip " + name);
             foreach (var expected in result.TestResults)

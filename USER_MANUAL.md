@@ -11,7 +11,7 @@
 
 TMU 专用视图使用自己的 Pin、路径和参考值筛选；侧栏 Test item / Channel 不限制它。文件、Run Batch、外层 Loop 及 TMU 内层 `Loop Count` 验证段保持隔离。同一段重复的 Pin/TMU/路径/参考值组合排除，并在摘要中提示；缺失点不补零。空 `VerifyResult` 保持 Unknown，数值超限与日志显式结果分开。
 
-缓存解析版本为 20。旧缓存文件重新导入时会自动重解析，原始日志不变。
+缓存解析版本为 22。旧缓存文件重新导入时会自动重解析，原始日志不变。
 
 ## 目录
 
@@ -460,7 +460,7 @@ Diagnostics 只在标签页可见或处于独立浮窗时刷新。Residual 图�
 
 ### Device Info（设备信息）
 
-分为两个子区域：
+分为三个子区域：
 
 #### System Information（系统信息）
 
@@ -472,6 +472,12 @@ Diagnostics 只在标签页可见或处于独立浮窗时刷新。Residual 图�
 | System Clock | 系统时钟频率 |
 | Operator | 操作员姓名 |
 | Tester ID | 测试机编号 |
+
+#### Slot Board Configuration（SLOT 板卡配置）
+
+Summary 按来源 LOG 分开展示两行信息：第一行 Slot number，第二行 Board type（DIGI、MVPI 等）；同一 SLOT 的重复类型合并。
+
+按来源 LOG、SLOT 排序展示日志中记录的板卡：Type、Device、Revision、SN、CalDate，以及来源文件和原始行号。支持普通 `Slot:` 及 `Dpsi/Mvpi/Hvpi/Mxvi/Mixi-Slot:` 记录，SLOT 编号保留日志原值。未记录的字段留空，未记录的槽位不推断为空槽。同一文件重复配置合并；版本、序列号或校准日期变化时保留不同配置。多文件加载时通过 Source LOG 区分，信息范围为整个文件。
 
 #### Device Mapping（设备映射）
 

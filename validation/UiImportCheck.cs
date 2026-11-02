@@ -265,6 +265,28 @@ static class UiImportCheck
                         Check(model.ChartDataRows.Count == (fixture.StartsWith("37") ? 84 : 78), "special table appears under the correct module/item");
                         CheckValueMode();
                     }
+                    foreach (var reload in new[] { false, true })
+                    {
+                        model.ClearAllCommand.Execute(null);
+                        Check(model.SlotBoards.Count == 0, "Clear All removes slot boards");
+                        Check(model.SlotBoardSummaries.Count == 0, "Clear All removes board summary");
+                        await model.LoadFilesFromPathsAsync(new[] { Path.Combine(fixtures, "43_Slot_Boards.log") });
+                        Check(model.SlotBoards.Count == 8 && model.SlotBoards[0].SlotNumber == 0 &&
+                            model.SlotBoards[^1].SlotNumber == 16 && model.SlotBoards.All(b => b.FileName == "43_Slot_Boards.log"),
+                            "Device Info exposes sorted boards and source LOG on import/cache reload");
+                        var summary = model.SlotBoardSummaries.Single();
+                        Check(summary.FileName == "43_Slot_Boards.log" && summary.Slots.Count == 6 &&
+                            summary.Slots[0] == new SSTLogAnalyser.Models.SlotBoardSummaryEntry("0", "DIGI") &&
+                            summary.Slots[1] == new SSTLogAnalyser.Models.SlotBoardSummaryEntry("8", "MVPI") &&
+                            summary.Slots[^1].SlotInfo == "16(15)", "two-row summary keeps one column per slot and distinct board types");
+                        if (reload) Check(model.StatusText.StartsWith("Loaded from cache:"), "board configuration survives cached reimport");
+                    }
+                    var secondBoardLog = Path.Combine(directory, "second-board-log.log");
+                    File.Copy(Path.Combine(fixtures, "43_Slot_Boards.log"), secondBoardLog);
+                    File.AppendAllText(secondBoardLog, "\nMvpi-Slot: 0 Device: SSI Revision: 0x123 SN: - CalDate: -\n");
+                    await model.LoadFilesFromPathsAsync(new[] { secondBoardLog });
+                    Check(model.SlotBoardSummaries.Count == 2 && model.SlotBoardSummaries[0].Slots[0].BoardTypes == "DIGI" &&
+                        model.SlotBoardSummaries[1].Slots[0].BoardTypes == "DIGI, MVPI", "summary isolates files and retains multiple board types at a slot");
                     var batchPath = batchLog ?? Path.Combine(fixtures, "27_MXVI_Run_Batches.log");
                     var source = await new LogParser().ParseAsync(batchPath);
                     Check(source.RunBatches.Count == 2, "two independently started verification batches");

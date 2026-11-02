@@ -107,6 +107,8 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<DiagnosticObservation> DiagnosticObservations { get; } = new();
     [ObservableProperty] private string _diagnosticObservationSummary = "Load a LOG file to see source-backed diagnostic events.";
     public ObservableCollection<DeviceInfo> DeviceEntries { get; } = new();
+    public ObservableCollection<SlotBoardInfo> SlotBoards { get; } = new();
+    public ObservableCollection<SlotBoardSummary> SlotBoardSummaries { get; } = new();
     public ObservableCollection<SystemInfo> SystemInfos { get; } = new();
     [ObservableProperty] private IReadOnlyList<StatEntry> _statistics = Array.Empty<StatEntry>();
     public ObservableCollection<PassFailEntry> PassFailEntries { get; } = new();
@@ -342,6 +344,7 @@ public partial class MainViewModel : ObservableObject
                 if (result.CalibrationCoefficients.Count > 0)
                     _cache.InsertCalibrationCoefficients(fileId, result.CalibrationCoefficients);
                 if (result.Devices.Count > 0) _cache.InsertDevices(fileId, result.Devices);
+                if (result.SlotBoards.Count > 0) _cache.InsertSlotBoards(fileId, result.SlotBoards);
                 if (result.Errors.Count > 0) _cache.InsertErrors(fileId, result.Errors);
                 if (result.DiagnosticObservations.Count > 0)
                     _cache.InsertDiagnosticObservations(fileId, result.DiagnosticObservations);
@@ -1588,6 +1591,12 @@ public partial class MainViewModel : ObservableObject
         var failed = DiagnosticObservations.Count(o => o.Status.Equals("Fail", StringComparison.OrdinalIgnoreCase));
         var passed = DiagnosticObservations.Count(o => o.Status.Equals("Pass", StringComparison.OrdinalIgnoreCase));
         DiagnosticObservationSummary = $"{DiagnosticObservations.Count} observations; {failed} explicit failures, {passed} explicit passes. Unknown is not a failure.";
+        SlotBoards.Clear(); foreach (var b in _cache.GetSlotBoards(fileIds)) SlotBoards.Add(b);
+        SlotBoardSummaries.Clear();
+        foreach (var file in SlotBoards.GroupBy(b => b.FileId))
+            SlotBoardSummaries.Add(new SlotBoardSummary(file.First().FileName,
+                file.GroupBy(b => b.SlotInfo).Select(slot => new SlotBoardSummaryEntry(slot.Key,
+                    string.Join(", ", slot.Select(b => b.SlotType).Distinct()))).ToList()));
         DeviceEntries.Clear(); foreach (var d in _cache.GetDevices(fileIds)) DeviceEntries.Add(d);
         SystemInfos.Clear(); foreach (var s in _cache.GetSystemInfos(fileIds)) SystemInfos.Add(s);
         PassFailEntries.Clear();
@@ -1641,7 +1650,7 @@ public partial class MainViewModel : ObservableObject
         AvailableTestItems.Clear(); AvailableLoops.Clear();
         AvailableCoefficientNames.Clear();
         SelectedChannels.Clear(); SelectedLoops.Clear();
-        ErrorEntries.Clear(); DiagnosticObservations.Clear(); DeviceEntries.Clear(); SystemInfos.Clear();
+        ErrorEntries.Clear(); DiagnosticObservations.Clear(); DeviceEntries.Clear(); SlotBoards.Clear(); SlotBoardSummaries.Clear(); SystemInfos.Clear();
         AcReports.Clear(); BaselineAcReport = null; SelectedAcReport = null; UpdateAcOverview();
         RefreshTmuReports();
         _acAlignmentTables.Clear(); RefreshAcAlignmentChoices();
