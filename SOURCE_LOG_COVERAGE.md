@@ -1,6 +1,6 @@
 # SST 源码日志解析覆盖表
 
-核对日期：2026-09-30。源代码为本机 D:\1_SVN\SST\Trunk\S200VerCalDia 当前工作副本；未修改 Trunk。
+核对日期：2026-11-04。缓存解析版本与 Slot Board 覆盖按当前仓库代码对齐：`CacheService` 中 `CurrentParserVersion = 22`，对应 [v1.2.11 更新说明](RELEASE_NOTES_v1.2.11.md)（2026-11-02）。源码调用清单仍来自 2026-09-30 的本机 D:\1_SVN\SST\Trunk\S200VerCalDia 工作副本；未修改 Trunk。
 
 ## 覆盖的含义
 
@@ -29,6 +29,7 @@
 | ThermalDetect、FlashAccess | 温度/Warning、Flash M/C Write/Read 字段、Write/readback 失败 | 04、14 |
 | RegDiag/ViRegDiag/MIXI Register -- Pass/Fail | 保留通道判定及事件原文；不再通用提取地址、读写、Mask 字段；没有板卡类型时不强填 Module | 14 |
 | MainWindow SST_Summary、AUTOTEST_Result | 按内容识别改名文件；总体/阶段/板卡/SN/失败 Slot/元数据 | 08–11，实际导入链已验证 |
+| LogParser Slot Board（可选 `Type-` 前缀 + `Slot:` / Device / Revision，可选 SN、CalDate） | `SlotBoardInfo`：无前缀记为 DIGI；DPSI、MVPI、HVPI、MXVI、MIXI 保留类型；`16(15)` 这类括号编号保留原文。相同配置合并，Revision、SN 或 CalDate 变化则分开保留，缺失字段留空。Device Info 按来源 LOG 与 SLOT 展示类型、Device、Revision、SN、CalDate 和行号，并给出 Slot number / Board type 两行 Summary；同一 SLOT 的重复类型合并，多文件各自汇总。覆盖整个文件，不随 Batch/Loop 筛选，未记录的 SLOT 不补空槽 | 43：去重后 8 条、6 种类型、`16(15)` |
 | MainWindow Sigma Summary / 数字序列 CSV | 专用表头提取 Module/Channel/Sigma 事件；不再通用提取无表头标量 | 18 |
 | 阶段 Start/End、配置、调试、其他过程信息 | 不再提供通用字段提取；ERROR/FATAL 仍通过既有错误列表处理 | 15、17 验证不崩溃及非法数值不变成测试点 |
 
@@ -42,7 +43,7 @@
 
 当前 Release/Debug 的 AdaptstarSystemServiceToolLog4cpp.config.xml 使用 %date  %-5level - %message%newline；支持逗号/小数点毫秒、INFO/WARN/ERROR/FATAL/DEBUG/TRACE 及多行续行。
 
-运行 powershell -NoProfile -File .\validation\Run-Regression.ps1，验证结构化预期、缓存/旧版本失效及实际 MainViewModel 导入/筛选/MIXI/限值图表数据。当前缓存解析版本为 20，重新加载旧文件会重解析。
+运行 powershell -NoProfile -File .\validation\Run-Regression.ps1，验证结构化预期、缓存/旧版本失效及实际 MainViewModel 导入/筛选/MIXI/限值图表数据。当前缓存解析版本为 22，重新加载旧文件会重解析。
 
 删除通用字段服务后，真实 45.07 MiB LogAll 测得解析 2.908 秒、结构化缓存写入 1.351 秒；提取 186,408 个测试点和 299 个事件，数量与修改前一致。共享文件 SHA256 另耗时 4.274 秒；不含实际窗口绘制耗时。
 
@@ -53,3 +54,9 @@
 ## v1.2.10 参考日志复查（2026-11-02）
 
 补齐 HDM 特殊验证列、TMUVI QA/QB、PE HV_VALUE、HVPI Fail 后缀及电流校准漏标 ADC 列、TMU 异步尾行；校准过程记录进入 Source Events，保持 Unknown。69 份参考日志测量表重新检查，已清点的验证表漏行数为 0。范围和来源见 [参考表审计](validation/REFERENCE_LOG_AUDIT.md)。这不代表未知格式或全部硬件语义的覆盖。
+
+## v1.2.11 Slot Board（2026-11-04）
+
+`LogParser` 解析 Slot Board 行并记入 `SlotBoardInfo`。Device Info 的 Slot Board Configuration 按来源 LOG、SLOT 展示板卡类型、Device、Revision、SN、CalDate 和原始行号，并增加 Slot number、Board type 两行 Summary。普通数字板类型为 DIGI；DPSI、MVPI、HVPI、MXVI、MIXI 保留记录中的类型；MIXI 的 `14(13)` 等编号保留原文。重复初始化且配置相同则合并，版本、序列号或校准日期变化时保留不同配置；缺失字段留空，未记录的 SLOT 不推断为空槽。板卡信息覆盖整个文件，不随测量 Batch/Loop 筛选变化。
+
+固定样本为 `validation/fixtures/43_Slot_Boards.log`。发布说明记录回归 18,071 项断言，以及三份真实 LOG 的不同板卡记录分别为 172、184、44 条。缓存解析版本为 22，旧 LOG 重新导入时自动重解析，原始 LOG 不变。详见 [v1.2.11 更新说明](RELEASE_NOTES_v1.2.11.md)。这不把外部 DLL、条件编译分支或仅有规则、尚未纳入固定样本的 HVI 格式记为已验证。
