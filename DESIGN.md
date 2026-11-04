@@ -50,6 +50,8 @@ SST Log Analyser is a WPF desktop application for parsing, visualizing, and comp
 └───────────────┘  └────────────────┘
 ```
 
+This diagram is the main UI, view-model, parse, and cache path. File hashing, the format-specific parsers, baseline comparison, and MIXI attribution are separate services under Project Structure. `MainViewModel` is one partial class; the AC, comparison, linked-chart, and TMU files are listed there.
+
 ## Data Flow
 
 ```
@@ -247,9 +249,16 @@ Each tab header includes a `[+]` button that detaches the tab content into a flo
 |-------|---------|
 | `LogFileInfo` | File metadata (name, hash, loop count, modules) |
 | `TestResult` | Single calibration data point |
+| `CalibrationCoefficient` | Gain/offset coefficient stored apart from test points |
 | `DeviceInfo` | Hardware group/location/slot mapping |
+| `SlotBoardInfo` | Slot board type, device, revision, SN, CalDate, and source line; `SlotBoardSummary` is the per-file Slot/Board-type summary |
+| `DiagnosticObservation` | One diagnostic or process observation |
+| `RunSummary` | SST_Summary / AUTOTEST overall, stage, board, and failed-slot summary |
+| `BaselineComparisonRow` | One baseline-vs-current comparison row |
+| `ToleranceCell` | Channel and test-item tolerance utilization |
 | `ErrorLogEntry` | Error/FATAL log lines |
 | `SystemInfo` | Key-value system metadata (versions, temperatures, etc.) |
+| `ModuleType` | Module enumeration used by results and filters |
 | `PassFailEntry` | Aggregated pass/fail summary per channel + test item |
 | `StatEntry` | Computed statistics (mean, stddev, min, max, fail count) |
 | `LegendItem` | Custom legend display entry |
@@ -257,26 +266,51 @@ Each tab header includes a `[+]` button that detaches the tab content into a flo
 
 ## Project Structure
 
+`MainViewModel` is one partial class. The files under `ViewModels/` split AC overview, across-point, relative timing, baseline comparison, the linked chart, and TMU charts from the shell in `MainViewModel.cs`.
+
 ```
 SSTLogAnalyser/
-├── Models/
-│   ├── DeviceInfo.cs
-│   ├── ErrorLogEntry.cs
-│   ├── LogFileInfo.cs
-│   ├── ModuleType.cs
-│   ├── SystemInfo.cs
-│   └── TestResult.cs
-├── Services/
-│   ├── CacheService.cs      # SQLite CRUD & query builders
-│   ├── FileHashService.cs   # SHA256 computation
-│   └── LogParser.cs         # Regex-based log extraction
+├── Models/                              # 12 types
+│   ├── BaselineComparisonRow.cs         # Baseline vs current comparison row
+│   ├── CalibrationCoefficient.cs        # Gain/offset calibration coefficients
+│   ├── DeviceInfo.cs                    # Group/location/slot device mapping
+│   ├── DiagnosticObservation.cs         # Diagnostic and process observations
+│   ├── ErrorLogEntry.cs                 # ERROR/FATAL log lines
+│   ├── LogFileInfo.cs                   # File metadata (name, hash, loop count)
+│   ├── ModuleType.cs                    # Module type enum
+│   ├── RunSummary.cs                    # SST_Summary / AUTOTEST summary
+│   ├── SlotBoardInfo.cs                 # Slot board row and per-file summary
+│   ├── SystemInfo.cs                    # Key-value system metadata
+│   ├── TestResult.cs                    # Single calibration data point
+│   └── ToleranceCell.cs                 # Channel/item tolerance utilization
+├── Services/                            # 9 services
+│   ├── AuxiliaryLogParser.cs            # Channel/level tables outside Expect CSV
+│   ├── BaselineLogComparer.cs           # Baseline vs current numeric comparison
+│   ├── CacheService.cs                  # SQLite CRUD and query builders
+│   ├── DiagnosticLogParser.cs           # One-line diagnostic observations
+│   ├── FileHashService.cs               # SHA256 computation
+│   ├── LogParser.cs                     # Line-oriented LOG extraction
+│   ├── MixiWaveOffsetAnalyzer.cs        # MIXI WAVE/OFFSET residual attribution
+│   ├── ProcessLogParser.cs              # Process, calibration, and multi-line events
+│   └── RunSummaryParser.cs              # SST_Summary / AUTOTEST_Result files
 ├── ViewModels/
-│   └── MainViewModel.cs     # MVVM, chart logic, filter state
+│   ├── MainViewModel.cs                 # Shell: loading, filters, chart, Device Info
+│   ├── MainViewModel.Ac.cs              # AC overview charts
+│   ├── MainViewModel.AcPoints.cs        # AC across-point heatmap and trend
+│   ├── MainViewModel.AcRelative.cs      # AC same-target relative timing
+│   ├── MainViewModel.Comparison.cs      # Baseline comparison view
+│   ├── MainViewModel.LinkedChart.cs     # Linked expected/error chart
+│   └── MainViewModel.Tmu.cs             # TMU path and timebase charts
 ├── Converters/
-│   └── Converters.cs        # BoolToVisibility, FailCountToColor
+│   └── Converters.cs                    # Bool/string visibility, fail-count color
 ├── App.xaml / App.xaml.cs
-├── MainWindow.xaml           # UI layout
-├── MainWindow.xaml.cs        # Drag-drop, tooltip mouse events
+├── MainWindow.xaml                      # UI layout
+├── MainWindow.xaml.cs                   # Drag-drop, tooltip mouse events
 ├── SSTLogAnalyser.csproj
+├── docs/                                # Manual images
+├── installer/                           # WiX MSI build
+├── validation/                          # Fixtures, regression checks, audit notes
 └── .gitignore
 ```
+
+`docs/`, `installer/`, and `validation/` sit beside the WPF project. `validation/**/*.cs` is excluded from `SSTLogAnalyser.csproj` and is not part of the application compile.
