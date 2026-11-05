@@ -202,7 +202,9 @@ Loop Index（循环序号）
 
 #### Channels / Pins（通道号）
 
-选择具体的通道。支持多选（按住 Ctrl 或 Shift）。
+单击通道只选中该通道；按住左键拖过列表可选择连续的一段，替换之前的选择。Ctrl+点击保留增选/取消功能，Ctrl+拖选可追加一段，Shift+点击可追加从上次点击位置开始的一段。
+
+使用 **Slot** 下拉框选中该 Slot 下日志中实际存在的所有通道，并替换当前选择。编号规则默认按模块区分：DPS/PMU 每 Slot 8 通道，AC/TMU/PE/PPMU 每 Slot 128 Pin，MIXI/AWG/DTZ 按 16 通道及物理 Slot 换算，其余按 Slot×100 编码。可以切换编号规则以匹配日志；64/32 Pin 模式需要按实际编号选择，自定义 PinMap 不能仅凭编号间隔推断物理 Slot。该选择作用于原有侧栏 Channel 筛选，AC/TMU 专用视图仍使用其自身的 Pin 控件。
 
 **提示：**
 - 在 Channel 定位框中输入 `36`、`CH36` 或 `Channel 36`，按 Enter 或点击搜索图标，即可选中该 Channel 并滚动到对应位置。

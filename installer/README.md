@@ -17,10 +17,10 @@ powershell -ExecutionPolicy Bypass -File .\installer\Build-Installer.ps1
 
 Outputs:
 
-- `dist\SSTLogAnalyser-v1.2.11-win-x64.msi`
-- `dist\SSTLogAnalyser-v1.2.11-win-x64.msi.sha256`
+- `dist\SSTLogAnalyser-v1.2.12-win-x64.msi`
+- `dist\SSTLogAnalyser-v1.2.12-win-x64.msi.sha256`
 
-The current release is v1.2.11. It adds per-slot board configuration and a two-row slot/type summary in Device Info, with DIGI naming, source LOG isolation and cached reload support. See `RELEASE_NOTES_v1.2.11.md` for verified scope. The share ZIP includes the installer, checksum, manual, release notes, Chinese installation instructions and the two synthetic baseline-comparison samples; it excludes real hardware LOGs and user cache.
+The current release is v1.2.12. It adds slot-based channel selection and drag range selection, while keeping ordinary clicks as single selection and removing the inline gesture hint. Numbering rules can be selected to match the LOG; custom PinMaps are not inferred. See `RELEASE_NOTES_v1.2.12.md` for verified scope. The share ZIP includes the installer, checksum, manual, release notes, Chinese installation instructions and the two synthetic baseline-comparison samples; it excludes real hardware LOGs and user cache.
 
 Previous v1.2.7 validation: its MSI is 53.53 MiB and its share ZIP is 53.13 MiB. Administrative extraction succeeded; all 419 extracted payload files matched the published files by SHA256. The extracted application created a responsive window, and its host trace confirmed use of the bundled `hostfxr.dll` as a self-contained app. The MSI product version, shortcut targets, package checksum and ZIP's embedded MSI were checked. The published parser also reproduced all 256 real HVPI verification points and 13 failures with zero source-column mismatches. Installation on another computer has not been tested.
 

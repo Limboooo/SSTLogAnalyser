@@ -167,6 +167,7 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
                             <StackPanel Orientation="Horizontal" Margin="2,2,2,4">
@@ -200,9 +201,25 @@
                                     <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE721;" FontSize="12"/>
                                 </Button>
                             </Grid>
-                            <ListBox x:Name="ChannelList" Grid.Row="2"
+                            <StackPanel Grid.Row="2" Margin="2,0,2,4">
+                                <ComboBox x:Name="ChannelSlotRule" SelectedIndex="0" Margin="0,0,0,4"
+                                          AutomationProperties.Name="Slot numbering rule"
+                                          ToolTip="Module default: pins / 128, DPS/PMU / 8, MIXI physical mapping, other channels / 100. Choose the rule matching your log; custom PinMaps may differ."
+                                          SelectionChanged="ChannelSlotRule_SelectionChanged"/>
+                                <DockPanel>
+                                    <TextBlock Text="Slot" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <ComboBox x:Name="ChannelSlotPicker" MinWidth="100"
+                                              AutomationProperties.Name="Select slot channels"
+                                              ToolTip="Select all available channels in this slot, replacing the current selection."
+                                              SelectionChanged="ChannelSlotPicker_SelectionChanged"/>
+                                </DockPanel>
+                            </StackPanel>
+                            <ListBox x:Name="ChannelList" Grid.Row="3"
                                      ItemsSource="{Binding AvailableChannels}"
                                      SelectionMode="Extended" MaxHeight="150"
+                                     PreviewMouseLeftButtonDown="ChannelList_PreviewMouseLeftButtonDown"
+                                     PreviewMouseLeftButtonUp="ChannelList_PreviewMouseLeftButtonUp"
+                                     LostMouseCapture="ChannelList_LostMouseCapture"
                                      SelectionChanged="ChannelList_SelectionChanged"/>
                         </Grid>
                     </GroupBox>

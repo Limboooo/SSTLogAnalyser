@@ -9,6 +9,7 @@ using LiveChartsCore.Drawing;
 using LiveChartsCore.SkiaSharpView.WPF;
 using Microsoft.Win32;
 using SSTLogAnalyser.ViewModels;
+using SSTLogAnalyser.Services;
 
 namespace SSTLogAnalyser;
 
@@ -20,10 +21,18 @@ public partial class MainWindow : Window
     private int _channelPageStartIndex;
     private bool _suppressChannelSelectionChanged;
     private const int ChannelPageSize = 128;
+    private int _channelDragAnchor = -1;
+    private Point _channelDragStart;
+    private int[] _channelDragBase = [];
+    private bool _updatingChannelSlots;
+    private int _channelRangeAnchor = -1;
 
     public MainWindow()
     {
         InitializeComponent();
+        ChannelSlotRule.ItemsSource = ChannelSlotSelection.Rules;
+        ChannelSlotRule.SelectedIndex = 0;
+        ChannelList.AddHandler(Mouse.MouseMoveEvent, new MouseEventHandler(ChannelList_MouseMove), true);
         MainTabControl.Items.Remove(DiagnosticsTab);
         MainTabControl.Items.Insert(1, DiagnosticsTab);
         _vm = new MainViewModel();
@@ -41,8 +50,10 @@ public partial class MainWindow : Window
         _vm.AvailableChannels.CollectionChanged += (_, _) =>
         {
             _channelPageStartIndex = 0;
+            _channelRangeAnchor = -1;
             EnsureDefaultChannelSelection();
             UpdateChannelPageText();
+            RefreshChannelSlots();
         };
         _vm.AvailableLoops.CollectionChanged += (_, _) => EnsureDefaultLoopSelection();
         DataContext = _vm;
@@ -72,6 +83,107 @@ public partial class MainWindow : Window
     }
 
     private void AllChannels_Click(object sender, RoutedEventArgs e) => SelectAllChannels();
+
+    private void ChannelSlotRule_SelectionChanged(object sender, SelectionChangedEventArgs e) => RefreshChannelSlots();
+
+    private void RefreshChannelSlots()
+    {
+        if (_vm == null || ChannelSlotPicker == null) return;
+        _updatingChannelSlots = true;
+        try
+        {
+            var rule = ChannelSlotRule.SelectedItem as string ?? "Module default";
+            ChannelSlotPicker.ItemsSource = _vm.AvailableChannels
+                .GroupBy(c => ChannelSlotSelection.GetSlot(c, _vm.SelectedModule, rule))
+                .OrderBy(g => g.Key)
+                .Select(g => new ChannelSlotChoice(g.Key, g.ToArray())).ToArray();
+            ChannelSlotPicker.SelectedIndex = -1;
+        }
+        finally { _updatingChannelSlots = false; }
+    }
+
+    private sealed record ChannelSlotChoice(int Slot, int[] Channels)
+    {
+        public override string ToString() => $"Slot {Slot}: {Channels.Min()}–{Channels.Max()} ({Channels.Length})";
+    }
+
+    private void ChannelSlotPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingChannelSlots || ChannelSlotPicker.SelectedItem is not ChannelSlotChoice slot) return;
+        ApplyChannelSelection(slot.Channels);
+        ChannelList.ScrollIntoView(slot.Channels[0]);
+        // A slot is a selection shortcut, so the same slot can be chosen again after editing channels.
+        ChannelSlotPicker.SelectedIndex = -1;
+        _vm.StatusText = $"Selected Slot {slot.Slot}: {slot.Channels.Length} available channels.";
+    }
+
+    private void ApplyChannelSelection(int[] channels)
+    {
+        _suppressChannelSelectionChanged = true;
+        try
+        {
+            ChannelList.UnselectAll();
+            foreach (var channel in channels) ChannelList.SelectedItems.Add(channel);
+        }
+        finally { _suppressChannelSelectionChanged = false; }
+        _vm.SetSelectedChannels(channels);
+    }
+
+    private void ChannelList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (ItemsControl.ContainerFromElement(ChannelList, e.OriginalSource as DependencyObject) is not ListBoxItem item) return;
+        var index = ChannelList.ItemContainerGenerator.IndexFromContainer(item);
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0 && _channelRangeAnchor >= 0)
+        {
+            ApplyChannelSelection(ChannelList.SelectedItems.OfType<int>().Union(_vm.AvailableChannels
+                .Skip(Math.Min(_channelRangeAnchor, index)).Take(Math.Abs(index - _channelRangeAnchor) + 1)).ToArray());
+            item.Focus();
+            e.Handled = true;
+            return;
+        }
+        if ((Keyboard.Modifiers & ModifierKeys.Alt) != 0) return;
+        _channelDragAnchor = ChannelList.ItemContainerGenerator.IndexFromContainer(item);
+        _channelRangeAnchor = _channelDragAnchor;
+        _channelDragStart = e.GetPosition(ChannelList);
+        _channelDragBase = (Keyboard.Modifiers & ModifierKeys.Control) != 0
+            ? ChannelList.SelectedItems.OfType<int>().ToArray() : [];
+        // Keep native click/keyboard behavior; publish one chart update when the gesture ends.
+        _suppressChannelSelectionChanged = true;
+    }
+
+    private void ChannelList_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_channelDragAnchor < 0 || e.LeftButton != MouseButtonState.Pressed) return;
+        var point = e.GetPosition(ChannelList);
+        if (Math.Abs(point.Y - _channelDragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+        if (ItemsControl.ContainerFromElement(ChannelList, e.OriginalSource as DependencyObject) is not ListBoxItem item) return;
+        var end = ChannelList.ItemContainerGenerator.IndexFromContainer(item);
+        UpdateDraggedChannelSelection(end);
+        // Native ListBox mouse handling retains capture and automatic scrolling at the edges.
+    }
+
+    private void UpdateDraggedChannelSelection(int end)
+    {
+        if (_channelDragAnchor < 0 || end < 0 || end >= _vm.AvailableChannels.Count) return;
+        var selection = _channelDragBase.Union(_vm.AvailableChannels
+            .Skip(Math.Min(_channelDragAnchor, end)).Take(Math.Abs(end - _channelDragAnchor) + 1)).ToHashSet();
+        foreach (var channel in ChannelList.SelectedItems.OfType<int>().Where(c => !selection.Contains(c)).ToArray())
+            ChannelList.SelectedItems.Remove(channel);
+        foreach (var channel in selection)
+            if (!ChannelList.SelectedItems.Contains(channel)) ChannelList.SelectedItems.Add(channel);
+    }
+
+    private void ChannelList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => FinishChannelDrag();
+    private void ChannelList_LostMouseCapture(object sender, MouseEventArgs e) => FinishChannelDrag();
+
+    private void FinishChannelDrag()
+    {
+        if (_channelDragAnchor < 0) return;
+        _channelDragAnchor = -1;
+        _channelDragBase = [];
+        _suppressChannelSelectionChanged = false;
+        _vm.SetSelectedChannels(ChannelList.SelectedItems.OfType<int>());
+    }
 
     private void FindChannel_Click(object sender, RoutedEventArgs e) => FindChannel();
 

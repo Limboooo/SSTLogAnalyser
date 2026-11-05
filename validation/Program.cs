@@ -5,6 +5,11 @@ using SSTLogAnalyser.Models;
 using SSTLogAnalyser.Services;
 
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+if (args.Contains("--channel-selection-check") || args.Contains("--channel-selection-preview"))
+{
+    ChannelSelectionCheck.Run(args.Contains("--channel-selection-preview"));
+    return;
+}
 var fixtureDirectory = Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), "validation/fixtures"))
     ? Path.Combine(Directory.GetCurrentDirectory(), "validation/fixtures")
     : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../fixtures"));
@@ -352,6 +357,7 @@ finally
 }
 checks += UiImportCheck.Run(fixtureDirectory, args.Length == 2 && args[0] == "--batch-log" ? args[1] : null);
 checks += ComparisonCheck.Run();
+checks += ChannelSelectionCheck.Run();
 checks += AcCheck.Run(Path.Combine(fixtureDirectory, "32_AC_Real.log"));
 checks += TmuCheck.Run(Path.Combine(fixtureDirectory, "35_TMU_Real.log"));
 Console.WriteLine($"PASS: {checks} assertions. Parser, summaries, process logs, attribution, import ViewModel and isolated cache verified.");
